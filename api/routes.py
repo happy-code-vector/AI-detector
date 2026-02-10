@@ -192,11 +192,5 @@ async def health_check() -> HealthResponse:
     )
 
 
-# Error handlers
-@router.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions."""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
+# Note: Exception handlers should be added to main FastAPI app, not router
+# FastAPI already handles HTTPExceptions by default
