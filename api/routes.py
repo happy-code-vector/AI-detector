@@ -7,7 +7,7 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 
-from src.models.schemas import (
+from schemas import (
     BatchJobRequest,
     BatchJobResponse,
     BatchJobStatus,
@@ -16,7 +16,7 @@ from src.models.schemas import (
     PredictResponse,
     ResponseMetadata,
 )
-from src.services.model_service import get_model_service
+from model_service import get_model_service
 
 # Batch job storage (in-memory for now)
 batch_jobs: Dict[str, BatchJobStatus] = {}

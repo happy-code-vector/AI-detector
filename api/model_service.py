@@ -8,7 +8,7 @@ from typing import List, Optional
 import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
-from src.config import get_device, settings
+from config import get_device, settings
 
 
 class ModelService:
