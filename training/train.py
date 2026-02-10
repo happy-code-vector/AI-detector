@@ -20,6 +20,13 @@ from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 
+# PEFT imports (optional)
+try:
+    from peft import get_peft_model, LoraConfig, TaskType
+    PEFT_AVAILABLE = True
+except ImportError:
+    PEFT_AVAILABLE = False
+
 
 def compute_metrics(eval_pred) -> Dict[str, float]:
     """Compute metrics for evaluation."""
@@ -118,14 +125,44 @@ def train_model(
     if output_dir:
         config["output_dir"] = output_dir
 
+    # Get quantization settings
+    load_in_8bit = config.get("load_in_8bit", False)
+    load_in_4bit = config.get("load_in_4bit", False)
+    use_peft = config.get("use_peft", False)
+
     print("Configuration:")
     print(yaml.dump(config, default_flow_style=False))
 
+    if load_in_8bit or load_in_4bit:
+        mode = "8-bit" if load_in_8bit else "4-bit"
+        print(f"\n⚡ Loading model in {mode} mode for memory efficiency")
+
+    if use_peft and not PEFT_AVAILABLE:
+        print("\n⚠️  PEFT requested but not installed. Install with: pip install peft")
+        use_peft = False
+
     # Initialize model and tokenizer
     print(f"\nLoading model: {config['model']}")
-    model_wrapper = AIDetectorModel(model_name=config["model"])
+    model_wrapper = AIDetectorModel(
+        model_name=config["model"],
+        load_in_8bit=load_in_8bit,
+        load_in_4bit=load_in_4bit,
+    )
     model = model_wrapper.model
     tokenizer = model_wrapper.tokenizer
+
+    # Apply PEFT/LoRA if enabled
+    if use_peft:
+        print("\n🔧 Applying LoRA adapters for efficient training...")
+        lora_config = LoraConfig(
+            r=config.get("lora_r", 16),
+            lora_alpha=config.get("lora_alpha", 32),
+            lora_dropout=config.get("lora_dropout", 0.1),
+            target_modules=["query_proj", "key_proj", "value_proj"],
+            task_type=TaskType.TOKEN_CLS,
+        )
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
 
     # Prepare datasets
     print("\nPreparing datasets...")

@@ -10,6 +10,17 @@ logging_steps: 50
 eval_steps: 500
 save_steps: 500
 
+# Quantization & PEFT settings (for efficient training)
+# Options: none, 8bit, 4bit
+load_in_8bit: false
+load_in_4bit: false
+
+# PEFT/LoRA settings
+use_peft: false
+lora_r: 16          # LoRA attention dimension
+lora_alpha: 32      # LoRA scaling parameter
+lora_dropout: 0.1   # LoRA dropout
+
 # Data settings
 max_sentences: 120
 max_words_per_sentence: 50
