@@ -54,7 +54,37 @@ def compute_metrics(eval_pred) -> Dict[str, float]:
 def load_config(config_path: str) -> Dict:
     """Load training configuration from YAML file."""
     with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    # Ensure numeric values are properly typed
+    numeric_fields = [
+        "epochs", "batch_size", "learning_rate", "max_length",
+        "warmup_steps", "logging_steps", "eval_steps", "save_steps",
+        "train_split", "eval_split", "test_split",
+        "lora_r", "lora_alpha", "lora_dropout"
+    ]
+
+    for field in numeric_fields:
+        if field in config and isinstance(config[field], str):
+            # Try to convert to float or int
+            try:
+                if "." in config[field] or "e" in config[field].lower():
+                    config[field] = float(config[field])
+                else:
+                    config[field] = int(config[field])
+            except ValueError:
+                pass  # Keep as string if conversion fails
+
+    # Ensure boolean values are properly typed
+    boolean_fields = [
+        "load_in_8bit", "load_in_4bit", "use_peft"
+    ]
+
+    for field in boolean_fields:
+        if field in config and isinstance(config[field], str):
+            config[field] = config[field].lower() in ("true", "1", "yes", "on")
+
+    return config
 
 
 def prepare_datasets(config: Dict, tokenizer) -> tuple:
@@ -158,7 +188,9 @@ def train_model(
             r=config.get("lora_r", 16),
             lora_alpha=config.get("lora_alpha", 32),
             lora_dropout=config.get("lora_dropout", 0.1),
+            # For DeBERTa v2 with 8-bit, use pattern matching for attention layers
             target_modules=["query_proj", "key_proj", "value_proj"],
+            modules_to_save=["classifier"],  # Always train the classifier head
             task_type=TaskType.TOKEN_CLS,
         )
         model = get_peft_model(model, lora_config)
@@ -179,7 +211,7 @@ def train_model(
         logging_steps=config["logging_steps"],
         eval_steps=config["eval_steps"],
         save_steps=config["save_steps"],
-        evaluation_strategy="steps",
+        eval_strategy="steps",  # Changed from evaluation_strategy (transformers >= 4.20)
         save_strategy="steps",
         load_best_model_at_end=True,
         metric_for_best_model="f1",

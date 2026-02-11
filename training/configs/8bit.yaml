@@ -16,6 +16,12 @@ save_steps: 500
 load_in_8bit: true
 load_in_4bit: false
 
+# PEFT/LoRA settings (required when using quantization)
+use_peft: true
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.1
+
 # Data settings
 max_sentences: 120
 max_words_per_sentence: 50
