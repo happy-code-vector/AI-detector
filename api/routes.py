@@ -16,7 +16,7 @@ from schemas import (
     PredictResponse,
     ResponseMetadata,
 )
-from model_service import get_model_service
+from service_selector import get_model_service
 
 # Batch job storage (in-memory for now)
 batch_jobs: Dict[str, BatchJobStatus] = {}
