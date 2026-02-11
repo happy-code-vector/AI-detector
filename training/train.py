@@ -181,6 +181,9 @@ def train_model(
     config = load_config(config_path)
     if output_dir:
         config["output_dir"] = output_dir
+    # Use checkpoint_dir from shared config if output_dir not set
+    if "output_dir" not in config and "checkpoint_dir" in config:
+        config["output_dir"] = config["checkpoint_dir"]
 
     # Get quantization settings
     load_in_8bit = config.get("load_in_8bit", False)
