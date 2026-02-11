@@ -16,7 +16,7 @@ peft>=0.18.0
 
 # Quantization (optional - has issues with Windows/DeBERTa)
 # Comment out if not using or if on Windows
-# bitsandbytes>=0.41.0
+bitsandbytes>=0.41.0
 
 # Tokenization
 sentencepiece
