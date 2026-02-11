@@ -24,4 +24,4 @@ eval_split: 0.1
 test_split: 0.1
 
 # Custom dataset path
-custom_data_path: data/custom/sample.json
+custom_data_path: data/custom/ai_polished_full.json

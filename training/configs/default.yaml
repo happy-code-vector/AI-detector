@@ -34,4 +34,4 @@ test_split: 0.1
 #   - ai-generated-text-dataset
 
 # Custom dataset paths
-custom_data_path: data/custom/sample.json
+custom_data_path: data/custom/ai_polished_full.json
