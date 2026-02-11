@@ -108,5 +108,65 @@ class BatchJobStatus(BaseModel):
     error: Optional[str] = Field(None, description="Error message if failed")
 
 
+class ManualTestRequest(BaseModel):
+    """Request for manual testing of AI text prediction."""
+
+    sentences: List[str] = Field(
+        ...,
+        description="List of sentences to manually test",
+        min_length=1,
+    )
+
+    include_word_analysis: bool = Field(
+        default=True,
+        description="Include per-word analysis in response",
+    )
+
+    @field_validator("sentences")
+    @classmethod
+    def validate_sentences(cls, v: List[str]) -> List[str]:
+        """Validate sentence constraints."""
+        from config import settings
+
+        if len(v) > settings.max_sentences:
+            raise ValueError(
+                f"Too many sentences. Maximum {settings.max_sentences} allowed."
+            )
+
+        for i, sentence in enumerate(v):
+            if not isinstance(sentence, str):
+                raise ValueError(f"Sentence {i} must be a string.")
+            if not sentence.strip():
+                raise ValueError(f"Sentence {i} is empty.")
+            word_count = len(sentence.split())
+            if word_count > settings.max_words_per_sentence:
+                raise ValueError(
+                    f"Sentence {i} exceeds maximum word count of {settings.max_words_per_sentence}."
+                )
+
+        return v
+
+
+class SentenceAnalysis(BaseModel):
+    """Detailed analysis for a single sentence."""
+
+    sentence: str = Field(..., description="Original sentence")
+    words: List[str] = Field(..., description="Words in the sentence")
+    probabilities: List[float] = Field(..., description="AI probability for each word")
+    avg_probability: float = Field(..., description="Average AI probability")
+    classification: str = Field(..., description="Classification (ai_generated/human_written/mixed)")
+
+
+class ManualTestResponse(BaseModel):
+    """Response for manual testing."""
+
+    sentences_analysis: List[SentenceAnalysis] = Field(
+        ...,
+        description="Detailed analysis for each sentence",
+    )
+    metadata: "ResponseMetadata" = Field(..., description="Processing metadata")
+
+
 # Update forward references
 PredictResponse.model_rebuild()
+ManualTestResponse.model_rebuild()
