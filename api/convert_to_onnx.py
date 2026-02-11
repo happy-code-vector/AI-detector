@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import torch
+import torch.onnx  # Use standard ONNX export (not onnxscript)
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 # Add parent directory to path for imports
@@ -37,17 +38,35 @@ def convert_to_onnx(
     """
     print(f"Loading model from: {model_path}")
 
-    # Load model and tokenizer
-    model = AutoModelForTokenClassification.from_pretrained(str(model_path))
-    tokenizer = AutoTokenizer.from_pretrained(str(model_path))
-
     # Check if it's a PEFT model
     adapter_config = model_path / "adapter_config.json"
+
     if adapter_config.exists():
-        print("⚠️  PEFT/LoRA model detected.")
-        print("   Make sure to use the MERGED model for ONNX conversion.")
-        print("   The PEFT adapters should be merged before conversion.")
-        return
+        print("🔧 PEFT/LoRA model detected.")
+        print("   Loading and merging adapters...")
+
+        try:
+            from peft import PeftModel
+            # Load base model
+            base_model = AutoModelForTokenClassification.from_pretrained(
+                str(model_path),
+                num_labels=2,
+            )
+            # Load PEFT adapters and merge
+            model = PeftModel.from_pretrained(base_model, str(model_path))
+            model = model.merge_and_unload()
+            print("   ✓ Adapters merged successfully")
+        except ImportError:
+            print("❌ PEFT library not installed.")
+            print("   Install with: pip install peft")
+            print("   Or retrain model without PEFT for ONNX conversion")
+            return
+    else:
+        # Load regular model
+        model = AutoModelForTokenClassification.from_pretrained(str(model_path))
+
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(str(model_path))
 
     model.eval()
 
@@ -57,13 +76,14 @@ def convert_to_onnx(
     # Export to ONNX
     print("Exporting to ONNX...")
 
-    # Sample inputs for export
+    # Sample inputs for export (use max_length from training config)
+    # For 350-word policy, we use 512 to accommodate longer sequences
     dummy_input = tokenizer(
-        ["This is a sample sentence for ONNX export."],
+        ["This is a sample sentence for ONNX export with longer max length."],
         return_tensors="pt",
         padding=True,
         truncation=True,
-        max_length=128,
+        max_length=512,  # Increased from 128 for 350-word support
     )
 
     input_names = ["input_ids", "attention_mask"]
@@ -75,15 +95,36 @@ def convert_to_onnx(
     output_names = ["logits"]
 
     # Export
-    torch.onnx.export(
-        model,
-        (dummy_input["input_ids"], dummy_input["attention_mask"]),
-        f=str(output_path / "model.onnx"),
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes=dynamic_axes,
-        opset_version=14,  # Use ONNX opset 14 for transformers
-    )
+    print("Attempting ONNX export (this may take a moment)...")
+    try:
+        torch.onnx.export(
+            model,
+            (dummy_input["input_ids"], dummy_input["attention_mask"]),
+            f=str(output_path / "model.onnx"),
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes=dynamic_axes,
+            opset_version=14,  # Use ONNX opset 14 for transformers
+            do_constant_folding=True,  # Optimize for better inference
+        )
+        print(f"✓ ONNX model saved to: {output_path / 'model.onnx'}")
+    except Exception as export_error:
+        print(f"❌ ONNX export failed: {export_error}")
+        print("\nTrying alternative export method...")
+        # Alternative: Use simpler export without dynamic axes
+        try:
+            torch.onnx.export(
+                model,
+                {"input_ids": dummy_input["input_ids"], "attention_mask": dummy_input["attention_mask"]},
+                f=str(output_path / "model.onnx"),
+                input_names=input_names,
+                output_names=output_names,
+                opset_version=14,
+                do_constant_folding=True,
+            )
+            print(f"✓ ONNX model saved to: {output_path / 'model.onnx'}")
+        except Exception as e2:
+            raise RuntimeError(f"Both ONNX export methods failed. Consider updating PyTorch: {e2}") from e2
 
     print(f"✓ ONNX model saved to: {output_path / 'model.onnx'}")
 
