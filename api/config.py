@@ -5,31 +5,42 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings
 
+from shared_config import (
+    get_model_name,
+    get_checkpoint_dir,
+    get_device,
+    get_max_sentences,
+    get_max_words_per_sentence,
+    get_api_config,
+)
+
 
 class Settings(BaseSettings):
     """API settings."""
 
-    # Model settings
-    model_path: str = "models/checkpoint-best"
-    model_name: str = "microsoft/deberta-v3-base"
+    # Model settings (from shared config)
+    model_path: str = str(get_checkpoint_dir())
+    model_name: str = get_model_name()
 
-    # API settings
-    max_sentences: int = 120
-    max_words_per_sentence: int = 50
-    batch_size: int = 8
+    # API settings (from shared config)
+    max_sentences: int = get_max_sentences()
+    max_words_per_sentence: int = get_max_words_per_sentence()
+    batch_size: int = get_api_config().get("batch_size", 8)
 
-    # Server settings
-    host: str = "0.0.0.0"
-    port: int = 8000
-    reload: bool = True
+    # Server settings (from shared config)
+    host: str = get_api_config().get("host", "0.0.0.0")
+    port: int = get_api_config().get("port", 8000)
+    reload: bool = get_api_config().get("reload", True)
 
-    # Device settings
-    device: str = "auto"  # auto, cuda, cpu
+    # Device settings (from shared config)
+    device: str = get_device()
 
-    # API metadata
-    api_title: str = "AI Text Detector API"
-    api_version: str = "1.0.0"
-    api_description: str = "Word-level AI-generated text detection API"
+    # API metadata (from shared config)
+    api_title: str = get_api_config().get("title", "AI Text Detector API")
+    api_version: str = get_api_config().get("version", "1.0.0")
+    api_description: str = get_api_config().get(
+        "description", "Word-level AI-generated text detection API"
+    )
 
     class Config:
         env_file = ".env"
@@ -40,12 +51,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-def get_device() -> str:
-    """Get the device to use for inference."""
-    if settings.device == "auto":
-        import torch
+# Re-export for convenience
+__all__ = ["settings", "get_device"]
 
-        if torch.cuda.is_available():
-            return "cuda"
-        return "cpu"
-    return settings.device

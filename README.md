@@ -2,6 +2,17 @@
 
 Word-level AI-generated text detection system using fine-tuned DeBERTa-v3 model.
 
+## Configuration
+
+This project uses a **unified configuration system**. All common settings are defined in `shared_config.yaml` at the project root. Training and API both read from this shared configuration, ensuring consistency.
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for detailed configuration guide.
+
+**Quick config changes:**
+- Change model: Edit `model.name` in `shared_config.yaml`
+- Training parameters: Edit `training.*` in `shared_config.yaml`
+- Experiment overrides: Edit specific `training/configs/*.yaml` files
+
 ## Project Structure
 
 ```

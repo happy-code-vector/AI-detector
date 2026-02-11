@@ -1,33 +1,6 @@
 # 8-bit quantization training configuration
-# Efficient training with minimal performance loss
+# WARNING: Has known compatibility issues with DeBERTa v2 + LoRA
+# Consider using stable.yaml instead
 
-model: microsoft/deberta-v3-base
-epochs: 3
-batch_size: 16
-learning_rate: 2e-5
-max_length: 128
-warmup_steps: 500
-output_dir: ../api/models/checkpoint-best
-logging_steps: 50
-eval_steps: 500
-save_steps: 500
-
-# Enable 8-bit quantization (~50% memory savings, <0.5% accuracy loss)
+# Enable 8-bit quantization (override from shared config)
 load_in_8bit: true
-load_in_4bit: false
-
-# PEFT/LoRA settings (required when using quantization)
-use_peft: true
-lora_r: 16
-lora_alpha: 32
-lora_dropout: 0.1
-
-# Data settings
-max_sentences: 120
-max_words_per_sentence: 50
-train_split: 0.8
-eval_split: 0.1
-test_split: 0.1
-
-# Custom dataset path
-custom_data_path: data/custom/ai_polished_full.json

@@ -19,6 +19,7 @@ from transformers import (
 from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
+from shared_config import load_shared_config, get_checkpoint_dir
 
 # PEFT imports (optional)
 try:
@@ -52,9 +53,36 @@ def compute_metrics(eval_pred) -> Dict[str, float]:
 
 
 def load_config(config_path: str) -> Dict:
-    """Load training configuration from YAML file."""
+    """
+    Load training configuration from YAML file.
+
+    Merges shared_config.yaml (base) with the specific config file (overrides).
+    Specific config values override shared config values.
+    """
+    # Load shared config as base
+    shared = load_shared_config()
+
+    # Flatten shared config sections into a single dict
+    base_config = {}
+    for section in ["model", "data", "training"]:
+        if section in shared:
+            base_config.update(shared[section])
+
+    # Load specific config overrides
     with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+        overrides = yaml.safe_load(f) or {}
+
+    # Merge: overrides take precedence
+    config = {**base_config, **overrides}
+
+    # Resolve paths relative to project root
+    project_root = Path(__file__).parent.parent
+
+    if "output_dir" in config:
+        config["output_dir"] = str(project_root / config["output_dir"])
+
+    if "custom_data_path" in config:
+        config["custom_data_path"] = str(project_root / config["custom_data_path"])
 
     # Ensure numeric values are properly typed
     numeric_fields = [
@@ -66,14 +94,13 @@ def load_config(config_path: str) -> Dict:
 
     for field in numeric_fields:
         if field in config and isinstance(config[field], str):
-            # Try to convert to float or int
             try:
                 if "." in config[field] or "e" in config[field].lower():
                     config[field] = float(config[field])
                 else:
                     config[field] = int(config[field])
             except ValueError:
-                pass  # Keep as string if conversion fails
+                pass
 
     # Ensure boolean values are properly typed
     boolean_fields = [
