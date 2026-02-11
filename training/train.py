@@ -231,6 +231,7 @@ def train_model(
         greater_is_better=True,
         report_to="none",  # Disable wandb unless configured
         save_total_limit=3,
+        max_grad_norm=config.get("max_grad_norm", 1.0),  # Gradient clipping to prevent NaN
     )
 
     # Initialize trainer

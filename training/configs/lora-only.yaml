@@ -4,7 +4,7 @@
 model: microsoft/deberta-v3-base
 epochs: 3
 batch_size: 16
-learning_rate: 2e-5
+learning_rate: 1e-5  # Lowered for stability
 max_length: 128
 warmup_steps: 500
 output_dir: ../api/models/checkpoint-best
@@ -12,7 +12,10 @@ logging_steps: 50
 eval_steps: 500
 save_steps: 500
 
-# No quantization (8-bit has issues with DeBERTa + Windows)
+# Gradient clipping to prevent training divergence
+max_grad_norm: 1.0
+
+# No quantization
 load_in_8bit: false
 load_in_4bit: false
 
