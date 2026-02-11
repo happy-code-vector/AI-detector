@@ -1,13 +1,29 @@
-transformers>=4.30.0
+# Core dependencies
 torch>=2.0.0
+transformers>=4.30.0
 datasets>=2.12.0
+accelerate>=0.20.0
+
+# Training utilities
 scikit-learn
 pandas
 tqdm
 numpy
 pyyaml
-wandb
+
+# PEFT/LoRA (optional - for efficient training)
+peft>=0.18.0
+
+# Quantization (optional - has issues with Windows/DeBERTa)
+# Comment out if not using or if on Windows
+# bitsandbytes>=0.41.0
+
+# Tokenization
 sentencepiece
-peft>=0.6.0
-bitsandbytes>=0.41.0
-accelerate>=0.20.0
+protobuf
+
+# Optional: experiment tracking
+wandb
+
+# Additional utilities
+colorama

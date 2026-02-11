@@ -1,4 +1,4 @@
-# Training configuration for AI Detector
+# Default training configuration for AI Detector
 model: microsoft/deberta-v3-base
 epochs: 3
 batch_size: 16
@@ -10,16 +10,15 @@ logging_steps: 50
 eval_steps: 500
 save_steps: 500
 
-# Quantization & PEFT settings (for efficient training)
-# Options: none, 8bit, 4bit
+# Quantization settings (disabled by default)
 load_in_8bit: false
 load_in_4bit: false
 
-# PEFT/LoRA settings
+# PEFT/LoRA settings (optional - enables efficient training)
 use_peft: false
-lora_r: 16          # LoRA attention dimension
-lora_alpha: 32      # LoRA scaling parameter
-lora_dropout: 0.1   # LoRA dropout
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.1
 
 # Data settings
 max_sentences: 120
@@ -28,10 +27,5 @@ train_split: 0.8
 eval_split: 0.1
 test_split: 0.1
 
-# Public datasets (Hugging Face)
-# public_datasets:
-#   - fake-news
-#   - ai-generated-text-dataset
-
-# Custom dataset paths
+# Custom dataset path
 custom_data_path: data/custom/ai_polished_full.json
