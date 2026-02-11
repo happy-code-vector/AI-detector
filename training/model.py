@@ -19,7 +19,7 @@ class AIDetectorModel(nn.Module):
 
     def __init__(
         self,
-        model_name: str = "microsoft/deberta-v3-base",
+        model_name: str = "microsoft/deberta-v3-large",
         num_labels: int = 2,
         cache_dir: Optional[str] = None,
         load_in_8bit: bool = False,
@@ -204,7 +204,7 @@ class AIDetectorModel(nn.Module):
 
 
 def get_model(
-    model_name: str = "microsoft/deberta-v3-base",
+    model_name: str = "microsoft/deberta-v3-large",
     pretrained_path: Optional[str] = None,
     load_in_8bit: bool = False,
     load_in_4bit: bool = False,
