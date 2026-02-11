@@ -1,5 +1,5 @@
 # Stable training configuration with gradient clipping
-model: microsoft/deberta-v3-base
+model: microsoft/deberta-v3-large
 epochs: 3
 batch_size: 16
 learning_rate: 1e-5  # Lower learning rate for stability
