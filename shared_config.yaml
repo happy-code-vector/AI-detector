@@ -4,7 +4,7 @@
 
 model:
   # Base model name from HuggingFace
-  name: "microsoft/deberta-v3-base"
+  name: "microsoft/deberta-v3-large"
 
   # Where trained models are saved/loaded from
   # Relative to project root
