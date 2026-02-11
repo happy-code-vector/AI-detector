@@ -10,7 +10,9 @@ Usage:
 """
 
 import os
+import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
@@ -30,6 +32,65 @@ except ImportError:
     print("   Install with: pip install onnxruntime")
 
 
+# Global regex for word splitting (compiled once for performance)
+_WORD_PATTERN = re.compile(r'\S+')
+
+
+def _align_to_words_optimized_onnx(
+    text: str,
+    token_probs: np.ndarray,
+    offset_mapping: np.ndarray,
+) -> List[float]:
+    """
+    Optimized word alignment using pre-computed positions (ONNX version).
+
+    Args:
+        text: Original input text
+        token_probs: Token-level probabilities (numpy array)
+        offset_mapping: Token character offsets (numpy array)
+
+    Returns:
+        Word-level probabilities
+    """
+    # Find all word positions in one pass using regex
+    word_boundaries = []  # List of (start, end) tuples
+
+    for match in _WORD_PATTERN.finditer(text):
+        word_boundaries.append((match.start(), match.end()))
+
+    if not word_boundaries:
+        return []
+
+    # Build token intervals from offset_mapping
+    token_intervals = []
+    for i, (start, end) in enumerate(offset_mapping):
+        if start == 0 and end == 0:  # Skip special tokens
+            continue
+        if i < len(token_probs):
+            token_intervals.append((start, end, float(token_probs[i])))
+
+    word_probs = []
+
+    # For each word, find all tokens that fall within its boundaries
+    for word_start, word_end in word_boundaries:
+        matching_probs = []
+
+        for token_start, token_end, prob in token_intervals:
+            # Token belongs to this word if it's fully contained within word boundaries
+            if token_start >= word_start and token_end <= word_end:
+                matching_probs.append(prob)
+
+        # Average probabilities for the word
+        if matching_probs:
+            avg_prob = sum(matching_probs) / len(matching_probs)
+            word_probs.append(round(avg_prob, 4))
+        else:
+            # No tokens found for this word (shouldn't happen with proper tokenization)
+            word_probs.append(0.0)
+
+    return word_probs
+
+
 class ONNXModelService:
     """
     ONNX Runtime-based model service for optimized CPU inference.
@@ -39,6 +100,8 @@ class ONNXModelService:
     - Dynamic batching (processes all sentences at once)
     - Thread control (OMP_NUM_THREADS)
     - Memory-efficient tokenization
+    - Optimized word alignment with regex
+    - Parallel word alignment processing
     """
 
     _instance: Optional["ONNXModelService"] = None
@@ -47,6 +110,7 @@ class ONNXModelService:
     _device = None
     _model_version = None
     _inference_batch_size = None
+    _alignment_workers = None  # Number of parallel workers for word alignment
 
     def __new__(cls) -> "ONNXModelService":
         """Ensure singleton pattern."""
@@ -63,6 +127,14 @@ class ONNXModelService:
             num_threads = model_config.get("omp_num_threads", os.cpu_count())
             os.environ["OMP_NUM_THREADS"] = str(num_threads)
             print(f"Set OMP_NUM_THREADS={num_threads} for optimal CPU performance")
+
+        # Get number of workers for parallel word alignment
+        if self._alignment_workers is None:
+            api_config = get_api_config()
+            # Use configured threads or default to CPU count - 1
+            self._alignment_workers = api_config.get("omp_num_threads", os.cpu_count() or 4) - 1
+            if self._alignment_workers < 1:
+                self._alignment_workers = 1
 
     def load_model(self) -> None:
         """Load ONNX model and tokenizer."""
@@ -196,7 +268,7 @@ class ONNXModelService:
         self, indexed_sentences: List[tuple]
     ) -> List[tuple]:
         """
-        Process a batch of sentences through ONNX model.
+        Process a batch of sentences through ONNX model with parallel word alignment.
 
         Args:
             indexed_sentences: List of (original_index, sentence) tuples
@@ -238,63 +310,34 @@ class ONNXModelService:
         probs = exp_logits / np.sum(exp_logits, axis=-1, keepdims=True)
         ai_probs = probs[:, :, 1]  # [batch_size, seq_len]
 
-        # Align to words
-        results = []
+        # Prepare arguments for parallel word alignment
+        alignment_args = []
         for batch_idx, (orig_idx, sentence) in enumerate(indexed_sentences):
             offset_mapping = encodings["offset_mapping"][batch_idx]
             token_probs = ai_probs[batch_idx]
-            word_probs = self._align_to_words(sentence, token_probs, offset_mapping)
-            results.append((orig_idx, word_probs))
+            alignment_args.append((sentence, token_probs, offset_mapping, orig_idx))
+
+        # Use parallel word alignment for better performance
+        results = []
+
+        # Only use parallel processing if we have enough sentences
+        if len(alignment_args) > 4:
+            with ThreadPoolExecutor(max_workers=min(self._alignment_workers, len(alignment_args))) as executor:
+                aligned_results = list(executor.map(
+                    lambda args: _align_to_words_optimized_onnx(args[0], args[1], args[2]),
+                    alignment_args
+                ))
+
+            # Pair results with original indices
+            for idx, (_, _, _, orig_idx) in enumerate(alignment_args):
+                results.append((orig_idx, aligned_results[idx]))
+        else:
+            # Sequential processing for small batches
+            for sentence, token_probs, offset_mapping, orig_idx in alignment_args:
+                word_probs = _align_to_words_optimized_onnx(sentence, token_probs, offset_mapping)
+                results.append((orig_idx, word_probs))
 
         return results
-
-    def _align_to_words(
-        self,
-        text: str,
-        token_probs: np.ndarray,
-        offset_mapping: np.ndarray,
-    ) -> List[float]:
-        """
-        Align token-level probabilities to words.
-
-        Args:
-            text: Original input text
-            token_probs: Token-level probabilities
-            offset_mapping: Token character offsets
-
-        Returns:
-            Word-level probabilities
-        """
-        words = text.split()
-        word_probs = []
-        text_lower = text.lower()
-
-        for word in words:
-            # Find word position in text
-            word_start = text_lower.find(word.lower())
-            if word_start == -1:
-                word_probs.append(0.0)
-                continue
-
-            word_end = word_start + len(word)
-
-            # Find tokens for this word
-            token_values = []
-            for i, (start, end) in enumerate(offset_mapping):
-                if start == 0 and end == 0:  # Special token
-                    continue
-                if start >= word_start and end <= word_end:
-                    if i < len(token_probs):
-                        token_values.append(token_probs[i])
-
-            # Average probabilities for word
-            if token_values:
-                avg_prob = sum(token_values) / len(token_values)
-                word_probs.append(round(float(avg_prob), 4))
-            else:
-                word_probs.append(0.0)
-
-        return word_probs
 
 
 # Global ONNX service instance

@@ -1,9 +1,11 @@
 """Model service for AI text detection inference."""
 
+import re
 import time
 import traceback
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
@@ -19,6 +21,85 @@ except ImportError:
     PEFT_AVAILABLE = False
 
 
+# Global regex for word splitting (compiled once for performance)
+_WORD_PATTERN = re.compile(r'\S+')
+_SPACE_PATTERN = re.compile(r'\s+')
+
+
+def _align_to_words_optimized(
+    text: str,
+    token_probs: List[float],
+    offset_mapping,
+) -> List[float]:
+    """
+    Optimized word alignment using pre-computed positions.
+
+    Args:
+        text: Original input text
+        token_probs: Token-level probabilities
+        offset_mapping: Token character offsets
+
+    Returns:
+        Word-level probabilities
+    """
+    # Find all word positions in one pass using regex
+    words = []
+    word_boundaries = []  # List of (start, end) tuples
+
+    for match in _WORD_PATTERN.finditer(text):
+        words.append(match.group())
+        word_boundaries.append((match.start(), match.end()))
+
+    if not words:
+        return []
+
+    # Build token -> probability mapping for O(1) lookup
+    # Create intervals from offset_mapping for efficient matching
+    token_intervals = []
+    for i, (start, end) in enumerate(offset_mapping):
+        if start == 0 and end == 0:  # Skip special tokens
+            continue
+        if i < len(token_probs):
+            token_intervals.append((start, end, token_probs[i]))
+
+    word_probs = []
+
+    # For each word, find all tokens that fall within its boundaries
+    for word_start, word_end in word_boundaries:
+        matching_probs = []
+
+        # Binary search would be ideal, but linear scan is fast enough
+        # since we have ~300-500 tokens per sentence
+        for token_start, token_end, prob in token_intervals:
+            # Token belongs to this word if it's fully contained within word boundaries
+            if token_start >= word_start and token_end <= word_end:
+                matching_probs.append(prob)
+
+        # Average probabilities for the word
+        if matching_probs:
+            avg_prob = sum(matching_probs) / len(matching_probs)
+            word_probs.append(round(avg_prob, 4))
+        else:
+            # No tokens found for this word (shouldn't happen with proper tokenization)
+            word_probs.append(0.0)
+
+    return word_probs
+
+
+def _align_words_parallel(args: Tuple[str, List[float], object]) -> List[float]:
+    """
+    Worker function for parallel word alignment.
+
+    Args:
+        args: Tuple of (text, token_probs, offset_mapping)
+
+    Returns:
+        Word-level probabilities
+    """
+    text, token_probs, offset_mapping = args
+    return _align_to_words_optimized(text, token_probs, offset_mapping)
+
+
 class ModelService:
     """Singleton service for model loading and inference."""
 
@@ -29,6 +110,7 @@ class ModelService:
     _model_version = None
     _inference_batch_size = None
     _use_fp16 = None
+    _alignment_workers = None  # Number of parallel workers for word alignment
 
     def __new__(cls) -> "ModelService":
         """Ensure singleton pattern."""
@@ -40,6 +122,15 @@ class ModelService:
         """Initialize model service (lazy loading)."""
         if self._device is None:
             self._device = get_device()
+
+        # Get number of workers for parallel word alignment
+        if self._alignment_workers is None:
+            import os
+            api_config = get_api_config()
+            # Use configured threads or default to CPU count - 1
+            self._alignment_workers = api_config.get("omp_num_threads", os.cpu_count() or 4) - 1
+            if self._alignment_workers < 1:
+                self._alignment_workers = 1
 
     def load_model(self) -> None:
         """Load the fine-tuned model and tokenizer."""
@@ -154,8 +245,8 @@ class ModelService:
                 probs = torch.softmax(logits, dim=-1)
                 ai_probs = probs[:, 1].cpu().tolist()  # AI probability
 
-                # Align to words
-                word_probs = self._align_to_words(text, ai_probs, offset_mapping)
+                # Align to words using optimized method
+                word_probs = _align_to_words_optimized(text, ai_probs, offset_mapping)
 
             return word_probs
 
@@ -195,7 +286,7 @@ class ModelService:
         return results
 
     def _process_batch(self, sentences: List[str]) -> List[List[float]]:
-        """Process a single batch of sentences."""
+        """Process a single batch of sentences with parallel word alignment."""
         # Filter out empty sentences
         indexed_sentences = [(i, s) for i, s in enumerate(sentences) if s.strip()]
 
@@ -227,14 +318,36 @@ class ModelService:
 
                 # Move to CPU for processing
                 probs = probs.cpu().tolist()
+                offset_mappings = offset_mappings.tolist()
 
-                # Align to words for each sentence
-                results = [None] * len(sentences)
+                # Use parallel word alignment for better performance
+                # Prepare arguments for parallel processing
+                alignment_args = []
                 for batch_idx, (orig_idx, sentence) in enumerate(indexed_sentences):
                     offset_mapping = offset_mappings[batch_idx]
                     token_probs = probs[batch_idx]
-                    word_probs = self._align_to_words(sentence, token_probs, offset_mapping)
-                    results[orig_idx] = word_probs
+                    alignment_args.append((sentence, token_probs, offset_mapping, orig_idx))
+
+                # Parallel word alignment using ThreadPoolExecutor
+                # Using ThreadPool instead of ProcessPool to avoid pickling overhead
+                # and because this is CPU-bound with GIL-released operations
+                results = [None] * len(sentences)
+
+                # Only use parallel processing if we have enough sentences
+                if len(alignment_args) > 4:
+                    with ThreadPoolExecutor(max_workers=min(self._alignment_workers, len(alignment_args))) as executor:
+                        aligned_results = list(executor.map(
+                            lambda args: _align_to_words_optimized(args[0], args[1], args[2]),
+                            alignment_args
+                        ))
+
+                    # Place results in correct positions
+                    for idx, (_, _, _, orig_idx) in enumerate(alignment_args):
+                        results[orig_idx] = aligned_results[idx]
+                else:
+                    # Sequential processing for small batches
+                    for sentence, token_probs, offset_mapping, orig_idx in alignment_args:
+                        results[orig_idx] = _align_to_words_optimized(sentence, token_probs, offset_mapping)
 
                 # Fill empty sentences
                 for i in range(len(sentences)):
@@ -262,54 +375,6 @@ class ModelService:
 
         tasks = [asyncio.to_thread(self.predict_single, s) for s in sentences]
         return await asyncio.gather(*tasks)
-
-    def _align_to_words(
-        self,
-        text: str,
-        token_probs: List[float],
-        offset_mapping,
-    ) -> List[float]:
-        """
-        Align token-level probabilities to words.
-
-        Args:
-            text: Original input text
-            token_probs: Token-level probabilities
-            offset_mapping: Token character offsets
-
-        Returns:
-            Word-level probabilities
-        """
-        words = text.split()
-        word_probs = []
-        text_lower = text.lower()
-
-        for word in words:
-            # Find word position in text
-            word_start = text_lower.find(word.lower())
-            if word_start == -1:
-                word_probs.append(0.0)
-                continue
-
-            word_end = word_start + len(word)
-
-            # Find tokens for this word
-            token_values = []
-            for i, (start, end) in enumerate(offset_mapping):
-                if start == 0 and end == 0:  # Special token
-                    continue
-                if start >= word_start and end <= word_end:
-                    if i < len(token_probs):
-                        token_values.append(token_probs[i])
-
-            # Average probabilities for the word
-            if token_values:
-                avg_prob = sum(token_values) / len(token_values)
-                word_probs.append(round(avg_prob, 4))
-            else:
-                word_probs.append(0.0)
-
-        return word_probs
 
 
 # Global model service instance
