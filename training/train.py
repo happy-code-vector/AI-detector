@@ -199,7 +199,7 @@ def train_model(
         use_peft = False
 
     # Initialize model and tokenizer
-    print(f"\nLoading model: {config['model']}")
+    print(f"\nLoading model: {config['model']['name']}"  # Access nested dict properly)
     model_wrapper = AIDetectorModel(
         model_name=config["model"],
         load_in_8bit=load_in_8bit,
