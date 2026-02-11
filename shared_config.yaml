@@ -33,7 +33,12 @@ data:
 
 training:
   # Default training batch size
-  batch_size: 16
+  # Reduced for GPU memory constraints (Colab: ~15GB)
+  batch_size: 4
+
+  # Gradient accumulation to simulate larger batch size
+  # effective_batch_size = batch_size * gradient_accumulation_steps = 4 * 4 = 16
+  gradient_accumulation_steps: 4
 
   # Learning rate
   learning_rate: 1e-5
@@ -56,8 +61,9 @@ training:
   eval_steps: 500
   save_steps: 500
 
-  # Quantization (not recommended - compatibility issues)
-  load_in_8bit: false
+  # Quantization for memory efficiency
+  # Enable 8-bit for GPU training on Colab to reduce memory usage
+  load_in_8bit: true
   load_in_4bit: false
 
   # LoRA settings

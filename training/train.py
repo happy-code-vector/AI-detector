@@ -250,6 +250,7 @@ def train_model(
         num_train_epochs=config["epochs"],
         per_device_train_batch_size=config["batch_size"],
         per_device_eval_batch_size=config["batch_size"],
+        gradient_accumulation_steps=config.get("gradient_accumulation_steps", 1),
         learning_rate=config["learning_rate"],
         warmup_steps=config["warmup_steps"],
         logging_steps=config["logging_steps"],
@@ -263,6 +264,7 @@ def train_model(
         report_to="none",  # Disable wandb unless configured
         save_total_limit=3,
         max_grad_norm=config.get("max_grad_norm", 1.0),  # Gradient clipping to prevent NaN
+        fp16=True,  # Use mixed precision training on GPU for memory efficiency
     )
 
     # Initialize trainer
