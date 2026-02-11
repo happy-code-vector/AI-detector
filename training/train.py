@@ -184,15 +184,28 @@ def train_model(
     # Apply PEFT/LoRA if enabled
     if use_peft:
         print("\n🔧 Applying LoRA adapters for efficient training...")
-        lora_config = LoraConfig(
-            r=config.get("lora_r", 16),
-            lora_alpha=config.get("lora_alpha", 32),
-            lora_dropout=config.get("lora_dropout", 0.1),
-            # For DeBERTa v2 with 8-bit, use pattern matching for attention layers
-            target_modules=["query_proj", "key_proj", "value_proj"],
-            modules_to_save=["classifier"],  # Always train the classifier head
-            task_type=TaskType.TOKEN_CLS,
-        )
+
+        # For quantized models, don't use modules_to_save (causes bitsandbytes conflicts)
+        # The classifier will be trained separately
+        if load_in_8bit or load_in_4bit:
+            lora_config = LoraConfig(
+                r=config.get("lora_r", 16),
+                lora_alpha=config.get("lora_alpha", 32),
+                lora_dropout=config.get("lora_dropout", 0.1),
+                target_modules=["query_proj", "key_proj", "value_proj"],
+                task_type=TaskType.TOKEN_CLS,
+            )
+        else:
+            # For non-quantized models, we can save the classifier
+            lora_config = LoraConfig(
+                r=config.get("lora_r", 16),
+                lora_alpha=config.get("lora_alpha", 32),
+                lora_dropout=config.get("lora_dropout", 0.1),
+                target_modules=["query_proj", "key_proj", "value_proj"],
+                modules_to_save=["classifier"],
+                task_type=TaskType.TOKEN_CLS,
+            )
+
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
 
