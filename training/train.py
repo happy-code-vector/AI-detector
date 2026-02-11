@@ -199,9 +199,10 @@ def train_model(
         use_peft = False
 
     # Initialize model and tokenizer
-    print(f"\nLoading model: {config['model']['name']}")  # Access nested dict properly
+    model_name = config.get("name", "microsoft/deberta-v3-base")
+    print(f"\nLoading model: {model_name}")
     model_wrapper = AIDetectorModel(
-        model_name=config["model"],
+        model_name=model_name,
         load_in_8bit=load_in_8bit,
         load_in_4bit=load_in_4bit,
     )
