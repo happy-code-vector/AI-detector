@@ -10,6 +10,13 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from config import get_device, settings
 
+# PEFT support (optional - for loading models trained with LoRA)
+try:
+    from peft import PeftModel
+    PEFT_AVAILABLE = True
+except ImportError:
+    PEFT_AVAILABLE = False
+
 
 class ModelService:
     """Singleton service for model loading and inference."""
@@ -46,9 +53,38 @@ class ModelService:
 
         try:
             print(f"Loading model from: {model_path}")
-            self._model = AutoModelForTokenClassification.from_pretrained(
-                str(model_path),
-            )
+
+            # Check if this is a PEFT model (has adapter_config.json)
+            adapter_config_path = model_path / "adapter_config.json"
+            is_peft_model = adapter_config_path.exists()
+
+            if is_peft_model:
+                if not PEFT_AVAILABLE:
+                    raise ImportError(
+                        "Model was trained with PEFT/LoRA but peft is not installed. "
+                        "Install with: pip install peft"
+                    )
+                print("🔧 Detected PEFT/LoRA model - loading with adapters...")
+
+                # Load base model first
+                base_model_name = settings.model_name  # or read from adapter_config
+                base_model = AutoModelForTokenClassification.from_pretrained(
+                    base_model_name,
+                    num_labels=2,
+                )
+
+                # Load PEFT adapters
+                self._model = PeftModel.from_pretrained(base_model, str(model_path))
+
+                # Merge adapters for faster inference (optional but recommended)
+                print("Merging LoRA adapters...")
+                self._model = self._model.merge_and_unload()
+            else:
+                # Regular model loading
+                self._model = AutoModelForTokenClassification.from_pretrained(
+                    str(model_path),
+                )
+
             self._tokenizer = AutoTokenizer.from_pretrained(str(model_path))
 
             self._model.to(self._device)
