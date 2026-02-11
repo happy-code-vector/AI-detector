@@ -64,6 +64,12 @@ api:
   # API server batch size (can be smaller for real-time inference)
   batch_size: 8
 
+  # Inference optimization
+  # Larger batch_size = faster throughput but more memory
+  inference_batch_size: 32
+  use_fp16: true  # Half precision for 2x speed (CUDA only)
+  max_batch_tokens: 8192  # Max tokens per batch (prevents OOM)
+
   # Server settings
   host: "0.0.0.0"
   port: 8000

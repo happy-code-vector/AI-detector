@@ -9,6 +9,7 @@ import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from config import get_device, settings
+from shared_config import get_api_config
 
 # PEFT support (optional - for loading models trained with LoRA)
 try:
@@ -26,6 +27,8 @@ class ModelService:
     _tokenizer = None
     _device = None
     _model_version = None
+    _inference_batch_size = None
+    _use_fp16 = None
 
     def __new__(cls) -> "ModelService":
         """Ensure singleton pattern."""
@@ -89,6 +92,11 @@ class ModelService:
 
             self._model.to(self._device)
             self._model.eval()
+
+            # Use half precision for faster inference (if CUDA available)
+            if self._device == "cuda":
+                print("Enabling FP16 for faster inference...")
+                self._model.half()
 
             # Extract version from path or config
             self._model_version = model_path.name
@@ -158,16 +166,85 @@ class ModelService:
         """
         Predict AI probability for multiple sentences.
 
+        Uses dynamic batching - splits large requests into optimal chunks
+        to maximize throughput while avoiding OOM errors.
+
         Args:
             sentences: List of input sentences
 
         Returns:
             2D list of word-level AI probabilities
         """
+        if not self.is_loaded:
+            self.load_model()
+
+        if not sentences:
+            return []
+
+        # Get inference batch size from config
+        api_config = get_api_config()
+        batch_size = api_config.get("inference_batch_size", 32)
+
+        # Process in chunks to avoid OOM and maximize throughput
         results = []
-        for sentence in sentences:
-            results.append(self.predict_single(sentence))
+
+        for i in range(0, len(sentences), batch_size):
+            batch = sentences[i : i + batch_size]
+            results.extend(self._process_batch(batch))
+
         return results
+
+    def _process_batch(self, sentences: List[str]) -> List[List[float]]:
+        """Process a single batch of sentences."""
+        # Filter out empty sentences
+        indexed_sentences = [(i, s) for i, s in enumerate(sentences) if s.strip()]
+
+        if not indexed_sentences:
+            return [[] for _ in sentences]
+
+        try:
+            with torch.no_grad():
+                # Tokenize all sentences at once
+                texts = [s for _, s in indexed_sentences]
+                encodings = self._tokenizer(
+                    texts,
+                    return_tensors="pt",
+                    truncation=True,
+                    padding=True,
+                    return_offsets_mapping=True,
+                )
+
+                input_ids = encodings["input_ids"].to(self._device)
+                attention_mask = encodings["attention_mask"].to(self._device)
+                offset_mappings = encodings["offset_mapping"]
+
+                # Batch inference - single forward pass
+                outputs = self._model(input_ids=input_ids, attention_mask=attention_mask)
+                logits = outputs.logits  # [batch_size, seq_len, num_labels]
+
+                # Get probabilities for AI class (index 1)
+                probs = torch.softmax(logits, dim=-1)[:, :, 1]  # [batch_size, seq_len]
+
+                # Move to CPU for processing
+                probs = probs.cpu().tolist()
+
+                # Align to words for each sentence
+                results = [None] * len(sentences)
+                for batch_idx, (orig_idx, sentence) in enumerate(indexed_sentences):
+                    offset_mapping = offset_mappings[batch_idx]
+                    token_probs = probs[batch_idx]
+                    word_probs = self._align_to_words(sentence, token_probs, offset_mapping)
+                    results[orig_idx] = word_probs
+
+                # Fill empty sentences
+                for i in range(len(sentences)):
+                    if results[i] is None:
+                        results[i] = []
+
+                return results
+
+        except Exception as e:
+            raise RuntimeError(f"Batch prediction failed: {e}") from e
 
     async def predict_batch_async(
         self, sentences: List[str]
