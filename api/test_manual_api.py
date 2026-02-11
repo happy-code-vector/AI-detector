@@ -113,53 +113,16 @@ class ManualTesterColab:
         Args:
             result: Result dictionary from test_sentences
         """
-        print("\n" + "="*70)
-        print("MANUAL TEST RESULTS")
-        print("="*70)
-
+        sentences_analysis = result.get("sentences_analysis", [])
         metadata = result.get("metadata", {})
-        print(f"\n📊 Metadata:")
-        print(f"   Model Version: {metadata.get('model_version')}")
-        print(f"   Processing Time: {metadata.get('processing_time_ms')} ms")
-        print(f"   Total Words: {metadata.get('total_words')}")
 
-        print(f"\n📝 Sentence Analysis:")
-        print("-"*70)
-
-        for i, analysis in enumerate(result.get("sentences_analysis", []), 1):
+        for i, analysis in enumerate(sentences_analysis, 1):
             sentence = analysis['sentence']
-            classification = analysis['classification']
-            avg_prob = analysis['avg_probability']
+            probs = analysis['probabilities']
+            print(f"{i}. {sentence}")
+            print(f"   {probs}")
 
-            # Emoji based on classification
-            emoji = {
-                "ai_generated": "🤖",
-                "human_written": "👤",
-                "mixed": "🔀"
-            }.get(classification, "❓")
-
-            print(f"\n{i}. {emoji} \"{sentence}\"")
-            print(f"   Classification: {classification}")
-            print(f"   Avg Probability: {avg_prob:.4f}")
-
-            words = analysis.get('words', [])
-            probs = analysis.get('probabilities', [])
-
-            if words and probs:
-                print(f"   Word-by-Word Analysis:")
-                for word, prob in zip(words, probs):
-                    bar = self._get_probability_bar(prob)
-                    indicator = "🔴" if prob > 0.6 else ("🟢" if prob < 0.4 else "🟡")
-                    print(f"     {indicator} {word:15s} | {prob:.4f} {bar}")
-
-        print("\n" + "="*70)
-
-    @staticmethod
-    def _get_probability_bar(probability: float, width: int = 20) -> str:
-        """Create a visual bar for probability."""
-        filled = int(probability * width)
-        bar = "█" * filled + "░" * (width - filled)
-        return f"[{bar}]"
+        print(f"\nTotal runtime: {metadata.get('processing_time_ms')} ms")
 
     def export_to_json(self, result: Dict[str, Any], filename: str = "test_results.json"):
         """Export results to JSON file.
