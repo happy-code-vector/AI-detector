@@ -153,3 +153,128 @@ checkpoints/
 
 AI-polished
 .claude
+OpenTuringBench
+
+# ========== AI Detector Project Specific ==========
+
+# Training artifacts
+training/runs/
+training/wandb/
+training/lightning_logs/
+training/logs/
+training/*/wandb/
+training/*/runs/
+training/*/lightning_logs/
+training/*/logs/
+
+# Model files
+*.pt
+*.bin
+*.safetensors
+*.onnx
+*.safetensors
+training/checkpoints/
+training/*/checkpoints/
+api/models/*.pt
+api/models/*.bin
+api/models/*.safetensors
+api/models/*.onnx
+
+# Datasets (large JSON files)
+training/datasets/*/train.json
+training/datasets/*/val.json
+training/datasets/*/test.json
+training/data/custom/*.json
+
+# API / Server
+*.pid
+*.sock
+api/*.pid
+api/nohup.log
+api/access.log
+api/error.log
+
+# Weights & Boards
+wandb/
+.wandb/
+boards/
+.boards/
+
+# Logs
+*.log
+logs/
+*.out
+*.err
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+*.bak
+*.backup
+.DS_Store
+Desktop.ini
+Thumbs.db
+
+# System & OS
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent.plist
+.com.apple.timemachine.supported/
+.com.apple.timemachine.machinequotation/
+.AppleDouble
+.AppleSingle
+.LSOverride
+
+# Node modules (if using web UI)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+pnpm-lock.yaml
+
+# Python cache (additional)
+*.pytest_cache/
+.hypothesis/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# Testing
+.tox/
+.venv
+env/
+ENV/
+env.bak/
+venv.bak/
+.eggs/
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+docs/_sources/
+
+# OS generated files
+Icon?
+.DS_Store?
+.Spotlight-V100
+.Trashes
+._*
+
+# Compiled Object files
+*.lo
+*.o
+*.obj
+*.exe
+*.dll
+*.dylib
+*.dynlib
