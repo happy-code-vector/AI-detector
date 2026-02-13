@@ -113,7 +113,7 @@ def main():
     """Main function to analyze OpenTuringBench dataset."""
 
     # Define paths
-    base_path = Path(__file__).parent / "datasets" / "OpenTuringBench"
+    base_path = Path(__file__).parent / "OpenTuringBench"
 
     if not base_path.exists():
         print(f"[X] OpenTuringBench directory not found at: {base_path}")
