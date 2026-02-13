@@ -20,7 +20,7 @@ model:
 
 data:
   # Custom dataset path (relative to project root)
-  custom_data_path: "training/data/custom/ai_polished_full.json"
+  custom_data_path: "training/data/custom/open_turing_bench_diff.json"
 
   # Text processing limits
   max_sentences: 120
