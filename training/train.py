@@ -264,7 +264,7 @@ def train_model(
         report_to="none",  # Disable wandb unless configured
         save_total_limit=3,
         max_grad_norm=config.get("max_grad_norm", 1.0),  # Gradient clipping to prevent NaN
-        fp16=True,  # Use mixed precision training on GPU for memory efficiency
+        bf16=True,  # Use BFloat16 (better than FP16, supported on RTX 3090/5090)
     )
 
     # Initialize trainer
