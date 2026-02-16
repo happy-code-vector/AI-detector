@@ -35,11 +35,11 @@ training:
   # RTX 5090 optimized settings (24GB VRAM)
   # batch_size: 12 = effective batch size of 12 with no accumulation
   # Adjust down if OOM: 8 or 10
-  batch_size: 12
+  batch_size: 4
 
   # Gradient accumulation (reduced since we have larger batch size)
   # effective_batch_size = 12 * 2 = 24
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 4
 
   # Learning rate
   learning_rate: 2e-5  # Slightly higher for faster convergence
@@ -63,9 +63,8 @@ training:
   save_steps: 500
 
   # Quantization for memory efficiency
-  # DISABLED for RTX 5090 - use FP16 instead for better quality
   # 8-bit/4-bit can cause PEFT/LoRA compatibility issues
-  load_in_8bit: false
+  load_in_8bit: true
   load_in_4bit: false
 
   # LoRA settings
