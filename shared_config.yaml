@@ -32,16 +32,17 @@ data:
   test_split: 0.1
 
 training:
-  # Default training batch size
-  # Reduced for GPU memory constraints (Colab: ~15GB)
-  batch_size: 4
+  # RTX 5090 optimized settings (24GB VRAM)
+  # batch_size: 12 = effective batch size of 12 with no accumulation
+  # Adjust down if OOM: 8 or 10
+  batch_size: 12
 
-  # Gradient accumulation to simulate larger batch size
-  # effective_batch_size = batch_size * gradient_accumulation_steps = 4 * 4 = 16
-  gradient_accumulation_steps: 4
+  # Gradient accumulation (reduced since we have larger batch size)
+  # effective_batch_size = 12 * 2 = 24
+  gradient_accumulation_steps: 2
 
   # Learning rate
-  learning_rate: 1e-5
+  learning_rate: 2e-5  # Slightly higher for faster convergence
 
   # Epochs
   epochs: 3
@@ -62,8 +63,9 @@ training:
   save_steps: 500
 
   # Quantization for memory efficiency
-  # Enable 8-bit for GPU training on Colab to reduce memory usage
-  load_in_8bit: true
+  # DISABLED for RTX 5090 - use FP16 instead for better quality
+  # 8-bit/4-bit can cause PEFT/LoRA compatibility issues
+  load_in_8bit: false
   load_in_4bit: false
 
   # LoRA settings
