@@ -62,8 +62,9 @@ training:
   save_steps: 500
 
   # Quantization for memory efficiency
+  # DISABLED for RTX 5090 - use BF16 instead for better quality
   # 8-bit/4-bit can cause PEFT/LoRA compatibility issues
-  load_in_8bit: true
+  load_in_8bit: false
   load_in_4bit: false
 
   # LoRA settings
