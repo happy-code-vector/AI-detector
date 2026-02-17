@@ -32,7 +32,6 @@ data:
   test_split: 0.1
 
 training:
-  # RTX 5090 optimized settings (24GB VRAM)
   # batch_size: 12 = effective batch size of 12 with no accumulation
   # Adjust down if OOM: 8 or 10
   batch_size: 4
