@@ -6,6 +6,25 @@ import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModelForTokenClassification, AutoTokenizer
 
+# Check for Flash Attention 2 availability
+def _get_attention_implementation():
+    """Get the best available attention implementation."""
+    if not torch.cuda.is_available():
+        return "eager"
+
+    # Try Flash Attention 2 first (best for H100, RTX 3090)
+    try:
+        import flash_attn
+        return "flash_attention_2"
+    except ImportError:
+        pass
+
+    # Fall back to SDPA (PyTorch native, still fast)
+    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+        return "sdpa"
+
+    return "eager"
+
 
 class AIDetectorModel(nn.Module):
     """Wrapper for DeBERTa-v3 token classification model."""
@@ -15,6 +34,7 @@ class AIDetectorModel(nn.Module):
         model_name: str = "microsoft/deberta-v3-base",
         num_labels: int = 2,
         cache_dir: Optional[str] = None,
+        attn_implementation: Optional[str] = None,
     ):
         """
         Initialize AI detector model.
@@ -23,10 +43,17 @@ class AIDetectorModel(nn.Module):
             model_name: Hugging Face model name
             num_labels: Number of classification labels (2: human=0, AI=1)
             cache_dir: Directory to cache downloaded models
+            attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
         """
         super().__init__()
         self.model_name = model_name
         self.num_labels = num_labels
+
+        # Auto-detect best attention implementation if not specified
+        if attn_implementation is None:
+            attn_implementation = _get_attention_implementation()
+
+        print(f"Using attention implementation: {attn_implementation}")
 
         # Load model configuration
         self.config = AutoConfig.from_pretrained(
@@ -35,11 +62,13 @@ class AIDetectorModel(nn.Module):
             cache_dir=cache_dir,
         )
 
-        # Load model
+        # Load model with optimized attention
         self.model = AutoModelForTokenClassification.from_pretrained(
             model_name,
             config=self.config,
             cache_dir=cache_dir,
+            attn_implementation=attn_implementation,
+            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
         )
 
         # Load tokenizer
@@ -157,12 +186,13 @@ class AIDetectorModel(nn.Module):
         self.tokenizer.save_pretrained(save_directory)
 
     @classmethod
-    def from_pretrained(cls, model_path: str) -> "AIDetectorModel":
+    def from_pretrained(cls, model_path: str, attn_implementation: Optional[str] = None) -> "AIDetectorModel":
         """
         Load a fine-tuned model from directory.
 
         Args:
             model_path: Path to saved model directory
+            attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
 
         Returns:
             Loaded AIDetectorModel instance
@@ -171,7 +201,15 @@ class AIDetectorModel(nn.Module):
         instance.model_name = model_path
         instance.num_labels = 2
 
-        instance.model = AutoModelForTokenClassification.from_pretrained(model_path)
+        # Auto-detect best attention implementation if not specified
+        if attn_implementation is None:
+            attn_implementation = _get_attention_implementation()
+
+        instance.model = AutoModelForTokenClassification.from_pretrained(
+            model_path,
+            attn_implementation=attn_implementation,
+            torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        )
         instance.tokenizer = AutoTokenizer.from_pretrained(model_path)
         instance.config = instance.model.config
 
@@ -181,6 +219,7 @@ class AIDetectorModel(nn.Module):
 def get_model(
     model_name: str = "microsoft/deberta-v3-base",
     pretrained_path: Optional[str] = None,
+    attn_implementation: Optional[str] = None,
 ) -> AIDetectorModel:
     """
     Get AI detector model.
@@ -188,10 +227,11 @@ def get_model(
     Args:
         model_name: Base model name (for new model)
         pretrained_path: Path to fine-tuned model (optional)
+        attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
 
     Returns:
         AIDetectorModel instance
     """
     if pretrained_path:
-        return AIDetectorModel.from_pretrained(pretrained_path)
-    return AIDetectorModel(model_name=model_name)
+        return AIDetectorModel.from_pretrained(pretrained_path, attn_implementation)
+    return AIDetectorModel(model_name=model_name, attn_implementation=attn_implementation)

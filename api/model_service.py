@@ -127,6 +127,24 @@ class ModelService:
             # Default to CPU count - 1 for parallel processing
             self._alignment_workers = max(1, (os.cpu_count() or 4) - 1)
 
+    def _get_attention_implementation(self) -> str:
+        """Get the best available attention implementation."""
+        if not torch.cuda.is_available():
+            return "eager"
+
+        # Try Flash Attention 2 first (best for H100, RTX 3090)
+        try:
+            import flash_attn
+            return "flash_attention_2"
+        except ImportError:
+            pass
+
+        # Fall back to SDPA (PyTorch native, still fast)
+        if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+            return "sdpa"
+
+        return "eager"
+
     def load_model(self) -> None:
         """Load the fine-tuned model and tokenizer."""
         if self._model is not None:
@@ -143,6 +161,10 @@ class ModelService:
         try:
             print(f"Loading model from: {model_path}")
 
+            # Get best attention implementation
+            attn_implementation = self._get_attention_implementation()
+            print(f"Using attention implementation: {attn_implementation}")
+
             # Check if this is a PEFT model (has adapter_config.json)
             adapter_config_path = model_path / "adapter_config.json"
             is_peft_model = adapter_config_path.exists()
@@ -155,23 +177,27 @@ class ModelService:
                     )
                 print("🔧 Detected PEFT/LoRA model - loading with adapters...")
 
-                # Load base model first
-                base_model_name = settings.model_name  # or read from adapter_config
+                # Load base model first with optimized attention
+                base_model_name = settings.model_name
                 base_model = AutoModelForTokenClassification.from_pretrained(
                     base_model_name,
                     num_labels=2,
+                    attn_implementation=attn_implementation,
+                    torch_dtype=torch.bfloat16 if self._device == "cuda" else torch.float32,
                 )
 
                 # Load PEFT adapters
                 self._model = PeftModel.from_pretrained(base_model, str(model_path))
 
-                # Merge adapters for faster inference (optional but recommended)
+                # Merge adapters for faster inference
                 print("Merging LoRA adapters...")
                 self._model = self._model.merge_and_unload()
             else:
-                # Regular model loading
+                # Regular model loading with optimized attention
                 self._model = AutoModelForTokenClassification.from_pretrained(
                     str(model_path),
+                    attn_implementation=attn_implementation,
+                    torch_dtype=torch.bfloat16 if self._device == "cuda" else torch.float32,
                 )
 
             self._tokenizer = AutoTokenizer.from_pretrained(str(model_path))
@@ -179,10 +205,14 @@ class ModelService:
             self._model.to(self._device)
             self._model.eval()
 
-            # Use BF16 for faster inference (if CUDA available and supported)
-            if self._device == "cuda" and torch.cuda.is_bf16_supported():
-                print("Enabling BF16 for faster inference...")
-                self._model = self._model.to(torch.bfloat16)
+            # Use torch.compile() for faster inference (PyTorch 2.0+)
+            if self._device == "cuda" and hasattr(torch, 'compile'):
+                try:
+                    print("Compiling model with torch.compile() for faster inference...")
+                    self._model = torch.compile(self._model, mode="reduce-overhead")
+                    print("Model compiled successfully")
+                except Exception as e:
+                    print(f"Warning: torch.compile() failed, continuing without: {e}")
 
             # Extract version from path or config
             self._model_version = model_path.name
