@@ -126,11 +126,8 @@ class ModelService:
         # Get number of workers for parallel word alignment
         if self._alignment_workers is None:
             import os
-            api_config = get_api_config()
-            # Use configured threads or default to CPU count - 1
-            self._alignment_workers = api_config.get("omp_num_threads", os.cpu_count() or 4) - 1
-            if self._alignment_workers < 1:
-                self._alignment_workers = 1
+            # Default to CPU count - 1 for parallel processing
+            self._alignment_workers = max(1, (os.cpu_count() or 4) - 1)
 
     def load_model(self) -> None:
         """Load the fine-tuned model and tokenizer."""

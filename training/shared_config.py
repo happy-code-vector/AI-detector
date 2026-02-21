@@ -80,3 +80,27 @@ def get_device() -> str:
         return "cpu"
 
     return device
+
+
+def get_training_mode() -> str:
+    """Get training mode: 'test' or 'full'."""
+    return get_training_config().get("mode", "full")
+
+
+def get_data_path() -> Path:
+    """Get the appropriate data path based on training mode."""
+    project_root = Path(__file__).parent.parent
+    mode = get_training_mode()
+    data_config = get_data_config()
+
+    if mode == "test":
+        test_path = data_config.get("test_data_path", "training/data/custom/test_subset.json")
+        return project_root / test_path
+    else:
+        full_path = data_config.get("full_data_path", "training/data/custom/AI-modification.json")
+        return project_root / full_path
+
+
+def get_test_subset_size() -> int:
+    """Get the number of samples for test mode."""
+    return get_data_config().get("test_subset_size", 5000)

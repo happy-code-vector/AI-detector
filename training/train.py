@@ -7,7 +7,6 @@ from typing import Dict, Optional
 
 import torch
 import yaml
-from datasets import load_dataset
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 from transformers import (
@@ -19,9 +18,15 @@ from transformers import (
 from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
-from shared_config import load_shared_config, get_checkpoint_dir
+from shared_config import (
+    load_shared_config,
+    get_checkpoint_dir,
+    get_data_path,
+    get_test_subset_size,
+    get_training_mode,
+)
 
-# PEFT imports (optional)
+# PEFT imports
 try:
     from peft import get_peft_model, LoraConfig, TaskType
     PEFT_AVAILABLE = True
@@ -52,12 +57,16 @@ def compute_metrics(eval_pred) -> Dict[str, float]:
     }
 
 
-def load_config(config_path: str) -> Dict:
+def load_config(config_path: Optional[str] = None, mode: str = "full") -> Dict:
     """
-    Load training configuration from YAML file.
+    Load training configuration.
 
-    Merges shared_config.yaml (base) with the specific config file (overrides).
-    Specific config values override shared config values.
+    Args:
+        config_path: Optional path to config file
+        mode: "test" or "full" training mode
+
+    Returns:
+        Configuration dictionary
     """
     # Load shared config as base
     shared = load_shared_config()
@@ -68,12 +77,16 @@ def load_config(config_path: str) -> Dict:
         if section in shared:
             base_config.update(shared[section])
 
-    # Load specific config overrides
-    with open(config_path, "r") as f:
-        overrides = yaml.safe_load(f) or {}
+    # Load specific config overrides if provided
+    if config_path and Path(config_path).exists():
+        with open(config_path, "r") as f:
+            overrides = yaml.safe_load(f) or {}
+        config = {**base_config, **overrides}
+    else:
+        config = base_config
 
-    # Merge: overrides take precedence
-    config = {**base_config, **overrides}
+    # Set mode
+    config["mode"] = mode
 
     # Resolve paths relative to project root
     project_root = Path(__file__).parent.parent
@@ -81,8 +94,8 @@ def load_config(config_path: str) -> Dict:
     if "output_dir" in config:
         config["output_dir"] = str(project_root / config["output_dir"])
 
-    if "custom_data_path" in config:
-        config["custom_data_path"] = str(project_root / config["custom_data_path"])
+    # Set data path based on mode
+    config["custom_data_path"] = str(get_data_path())
 
     # Ensure numeric values are properly typed
     numeric_fields = [
@@ -103,15 +116,51 @@ def load_config(config_path: str) -> Dict:
                 pass
 
     # Ensure boolean values are properly typed
-    boolean_fields = [
-        "load_in_8bit", "load_in_4bit", "use_peft"
-    ]
+    boolean_fields = ["use_peft"]
 
     for field in boolean_fields:
         if field in config and isinstance(config[field], str):
             config[field] = config[field].lower() in ("true", "1", "yes", "on")
 
     return config
+
+
+def create_test_subset(source_path: str, dest_path: str, subset_size: int) -> None:
+    """
+    Create a test subset from the full dataset.
+
+    Args:
+        source_path: Path to full dataset
+        dest_path: Path to save subset
+        subset_size: Number of samples to include
+    """
+    import json
+
+    print(f"Creating test subset with {subset_size} samples...")
+
+    with open(source_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    sentences = data["sentences"]
+
+    # Take first N samples (or random sample)
+    if len(sentences) > subset_size:
+        # Use fixed seed for reproducibility
+        torch.manual_seed(42)
+        indices = torch.randperm(len(sentences))[:subset_size].tolist()
+        subset = [sentences[i] for i in indices]
+    else:
+        subset = sentences
+
+    subset_data = {"sentences": subset}
+
+    # Ensure directory exists
+    Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
+
+    with open(dest_path, "w", encoding="utf-8") as f:
+        json.dump(subset_data, f, ensure_ascii=False)
+
+    print(f"Test subset saved to: {dest_path}")
 
 
 def prepare_datasets(config: Dict, tokenizer) -> tuple:
@@ -126,9 +175,10 @@ def prepare_datasets(config: Dict, tokenizer) -> tuple:
         Tuple of (train_dataset, eval_dataset)
     """
     custom_data_path = config.get("custom_data_path")
+    mode = config.get("mode", "full")
 
     if custom_data_path and Path(custom_data_path).exists():
-        print(f"Loading custom dataset from: {custom_data_path}")
+        print(f"Loading {'test' if mode == 'test' else 'full'} dataset from: {custom_data_path}")
         data = load_custom_dataset(custom_data_path)
         texts = data["texts"]
         labels = data["labels"]
@@ -153,89 +203,72 @@ def prepare_datasets(config: Dict, tokenizer) -> tuple:
             generator=torch.Generator().manual_seed(42),
         )
 
-        print(f"Train size: {len(train_dataset)}, Eval size: {len(eval_dataset)}")
+        print(f"Dataset size: {total_size} samples")
+        print(f"Train: {len(train_dataset)}, Eval: {len(eval_dataset)}")
 
     else:
-        # Load public dataset
-        print("Using public datasets (not implemented - add dataset names to config)")
-        # TODO: Implement public dataset loading
-        raise NotImplementedError(
-            "Please provide custom_data_path in config or implement public dataset loading"
+        raise FileNotFoundError(
+            f"Dataset not found at {custom_data_path}. "
+            "Please ensure the dataset exists or run with --mode test to create a test subset."
         )
 
     return train_dataset, eval_dataset
 
 
 def train_model(
-    config_path: str = "configs/default.yaml",
+    config_path: Optional[str] = None,
     output_dir: Optional[str] = None,
+    mode: str = "full",
 ):
     """
     Train the AI detection model.
 
     Args:
-        config_path: Path to configuration file
+        config_path: Optional path to configuration file
         output_dir: Override output directory from config
+        mode: "test" for quick testing, "full" for production training
     """
     # Load configuration
-    config = load_config(config_path)
+    config = load_config(config_path, mode)
+
     if output_dir:
         config["output_dir"] = output_dir
+
     # Use checkpoint_dir from shared config if output_dir not set
-    if "output_dir" not in config and "checkpoint_dir" in config:
-        config["output_dir"] = config["checkpoint_dir"]
+    if "output_dir" not in config:
+        config["output_dir"] = str(get_checkpoint_dir())
 
-    # Get quantization settings
-    load_in_8bit = config.get("load_in_8bit", False)
-    load_in_4bit = config.get("load_in_4bit", False)
-    use_peft = config.get("use_peft", False)
+    use_peft = config.get("use_peft", True)
 
-    print("Configuration:")
-    print(yaml.dump(config, default_flow_style=False))
-
-    if load_in_8bit or load_in_4bit:
-        mode = "8-bit" if load_in_8bit else "4-bit"
-        print(f"\n⚡ Loading model in {mode} mode for memory efficiency")
+    print("=" * 60)
+    print(f"Training Mode: {mode.upper()}")
+    print("=" * 60)
+    print("\nConfiguration:")
+    print(yaml.dump({k: v for k, v in config.items() if not k.startswith("_")}, default_flow_style=False))
 
     if use_peft and not PEFT_AVAILABLE:
         print("\n⚠️  PEFT requested but not installed. Install with: pip install peft")
         use_peft = False
 
     # Initialize model and tokenizer
-    model_name = config.get("name", "microsoft/deberta-v3-base")
+    model_name = config.get("name", "microsoft/deberta-v3-large")
     print(f"\nLoading model: {model_name}")
-    model_wrapper = AIDetectorModel(
-        model_name=model_name,
-        load_in_8bit=load_in_8bit,
-        load_in_4bit=load_in_4bit,
-    )
+    model_wrapper = AIDetectorModel(model_name=model_name)
     model = model_wrapper.model
     tokenizer = model_wrapper.tokenizer
 
-    # Apply PEFT/LoRA if enabled
+    # Apply PEFT/LoRA
     if use_peft:
         print("\n🔧 Applying LoRA adapters for efficient training...")
 
-        # For quantized models, don't use modules_to_save (causes bitsandbytes conflicts)
-        # The classifier will be trained separately
-        if load_in_8bit or load_in_4bit:
-            lora_config = LoraConfig(
-                r=config.get("lora_r", 16),
-                lora_alpha=config.get("lora_alpha", 32),
-                lora_dropout=config.get("lora_dropout", 0.1),
-                target_modules=["query_proj", "key_proj", "value_proj"],
-                task_type=TaskType.TOKEN_CLS,
-            )
-        else:
-            # For non-quantized models, we can save the classifier
-            lora_config = LoraConfig(
-                r=config.get("lora_r", 16),
-                lora_alpha=config.get("lora_alpha", 32),
-                lora_dropout=config.get("lora_dropout", 0.1),
-                target_modules=["query_proj", "key_proj", "value_proj"],
-                modules_to_save=["classifier"],
-                task_type=TaskType.TOKEN_CLS,
-            )
+        lora_config = LoraConfig(
+            r=config.get("lora_r", 16),
+            lora_alpha=config.get("lora_alpha", 32),
+            lora_dropout=config.get("lora_dropout", 0.1),
+            target_modules=["query_proj", "key_proj", "value_proj"],
+            modules_to_save=["classifier"],
+            task_type=TaskType.TOKEN_CLS,
+        )
 
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
@@ -256,15 +289,15 @@ def train_model(
         logging_steps=config["logging_steps"],
         eval_steps=config["eval_steps"],
         save_steps=config["save_steps"],
-        eval_strategy="steps",  # Changed from evaluation_strategy (transformers >= 4.20)
+        eval_strategy="steps",
         save_strategy="steps",
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         greater_is_better=True,
-        report_to="none",  # Disable wandb unless configured
+        report_to="none",
         save_total_limit=3,
-        max_grad_norm=config.get("max_grad_norm", 1.0),  # Gradient clipping to prevent NaN
-        bf16=True,  # Use BFloat16 (better than FP16, supported on RTX 3090/5090)
+        max_grad_norm=config.get("max_grad_norm", 1.0),
+        bf16=True,  # BF16 for RTX 3090/5090/H100
     )
 
     # Initialize trainer
@@ -300,8 +333,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/default.yaml",
-        help="Path to configuration file",
+        default=None,
+        help="Path to configuration file (optional)",
     )
     parser.add_argument(
         "--output",
@@ -310,28 +343,41 @@ def main():
         help="Override output directory",
     )
     parser.add_argument(
-        "--create-sample",
+        "--mode",
+        type=str,
+        choices=["test", "full"],
+        default="full",
+        help="Training mode: 'test' for quick local testing (small subset), 'full' for production training",
+    )
+    parser.add_argument(
+        "--create-test-subset",
         action="store_true",
-        help="Create sample dataset for testing",
+        help="Create test subset from full dataset",
     )
 
     args = parser.parse_args()
-
-    if args.create_sample:
-        from data_loader import create_sample_dataset
-
-        sample_path = Path(__file__).parent / "data" / "custom" / "sample.json"
-        create_sample_dataset(sample_path)
-        print(f"\nUpdate your config with:")
-        print(f"custom_data_path: {sample_path}")
-        return
 
     # Change to training directory
     training_dir = Path(__file__).parent
     os.chdir(training_dir)
 
+    # Create test subset if requested or if in test mode and subset doesn't exist
+    project_root = training_dir.parent
+    test_subset_path = project_root / "training/data/custom/test_subset.json"
+    full_data_path = project_root / "training/data/custom/AI-modification.json"
+
+    if args.create_test_subset or (args.mode == "test" and not test_subset_path.exists()):
+        if full_data_path.exists():
+            create_test_subset(
+                str(full_data_path),
+                str(test_subset_path),
+                get_test_subset_size()
+            )
+        else:
+            print(f"Warning: Full dataset not found at {full_data_path}")
+
     # Train model
-    train_model(args.config, args.output)
+    train_model(args.config, args.output, args.mode)
 
 
 if __name__ == "__main__":

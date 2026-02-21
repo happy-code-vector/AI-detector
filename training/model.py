@@ -10,7 +10,6 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
-    BitsAndBytesConfig,
 )
 
 
@@ -22,8 +21,6 @@ class AIDetectorModel(nn.Module):
         model_name: str = "microsoft/deberta-v3-base",
         num_labels: int = 2,
         cache_dir: Optional[str] = None,
-        load_in_8bit: bool = False,
-        load_in_4bit: bool = False,
     ):
         """
         Initialize AI detector model.
@@ -32,14 +29,10 @@ class AIDetectorModel(nn.Module):
             model_name: Hugging Face model name
             num_labels: Number of classification labels (2: human=0, AI=1)
             cache_dir: Directory to cache downloaded models
-            load_in_8bit: Load model in 8-bit mode (requires bitsandbytes)
-            load_in_4bit: Load model in 4-bit mode (requires bitsandbytes)
         """
         super().__init__()
         self.model_name = model_name
         self.num_labels = num_labels
-        self.load_in_8bit = load_in_8bit
-        self.load_in_4bit = load_in_4bit
 
         # Load model configuration
         self.config = AutoConfig.from_pretrained(
@@ -48,23 +41,11 @@ class AIDetectorModel(nn.Module):
             cache_dir=cache_dir,
         )
 
-        # Prepare quantization config if needed
-        quantization_config = None
-        if load_in_8bit:
-            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-        elif load_in_4bit:
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-
         # Load model
         self.model = AutoModelForTokenClassification.from_pretrained(
             model_name,
             config=self.config,
             cache_dir=cache_dir,
-            quantization_config=quantization_config,
         )
 
         # Load tokenizer
@@ -80,7 +61,7 @@ class AIDetectorModel(nn.Module):
     def predict(
         self,
         texts: List[str],
-        device: str = "cpu",
+        device: str = "cuda",
         return_probabilities: bool = True,
     ) -> List[List[float]]:
         """
@@ -206,8 +187,6 @@ class AIDetectorModel(nn.Module):
 def get_model(
     model_name: str = "microsoft/deberta-v3-base",
     pretrained_path: Optional[str] = None,
-    load_in_8bit: bool = False,
-    load_in_4bit: bool = False,
 ) -> AIDetectorModel:
     """
     Get AI detector model.
@@ -215,16 +194,10 @@ def get_model(
     Args:
         model_name: Base model name (for new model)
         pretrained_path: Path to fine-tuned model (optional)
-        load_in_8bit: Load model in 8-bit mode
-        load_in_4bit: Load model in 4-bit mode
 
     Returns:
         AIDetectorModel instance
     """
     if pretrained_path:
         return AIDetectorModel.from_pretrained(pretrained_path)
-    return AIDetectorModel(
-        model_name=model_name,
-        load_in_8bit=load_in_8bit,
-        load_in_4bit=load_in_4bit,
-    )
+    return AIDetectorModel(model_name=model_name)

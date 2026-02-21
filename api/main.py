@@ -1,6 +1,5 @@
 """FastAPI application entry point for AI Text Detector API."""
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,19 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from routes import router
 from config import settings
-from shared_config import get_model_config
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # Set thread count for optimal CPU performance
-    if not os.environ.get("OMP_NUM_THREADS"):
-        model_config = get_model_config()
-        num_threads = model_config.get("omp_num_threads", os.cpu_count() or 12)
-        os.environ["OMP_NUM_THREADS"] = str(num_threads)
-        print(f"Set OMP_NUM_THREADS={num_threads} for optimal CPU performance")
-
     # Startup
     print("Starting AI Text Detector API...")
     print(f"Model path: {settings.model_path}")

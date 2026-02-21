@@ -7,47 +7,50 @@ model:
   name: "microsoft/deberta-v3-large"
 
   # Where trained models are saved/loaded from
-  # Relative to project root
-  # To use ONNX (recommended for CPU): change to "api/models/model_onnx"
   checkpoint_dir: "api/models/checkpoint-best"
 
   # Device: auto, cuda, cpu
   device: "auto"
 
-  # CPU optimization (set number of threads for ONNX Runtime)
-  # Set to number of physical CPU cores for optimal performance
-  omp_num_threads: 12
-
 data:
-  # Custom dataset path (relative to project root)
-  custom_data_path: "training/data/custom/all_datasets_combined.json"
+  # Full dataset path (relative to project root)
+  full_data_path: "training/data/custom/all_datasets_combined.json"
+
+  # Test dataset path (subset for local testing on RTX 3060)
+  test_data_path: "training/data/custom/test_subset.json"
 
   # Text processing limits
   max_sentences: 120
-  max_words_per_sentence: 350  # Updated policy: 7x increase from 50
+  max_words_per_sentence: 350
 
   # Data split ratios
   train_split: 0.8
   eval_split: 0.1
   test_split: 0.1
 
-training:
-  # batch_size: 12 = effective batch size of 12 with no accumulation
-  # Adjust down if OOM: 8 or 10
-  batch_size: 4
+  # Test mode: use small subset for quick testing
+  test_subset_size: 5000  # Number of samples for test training
 
-  # Gradient accumulation (reduced since we have larger batch size)
-  # effective_batch_size = 12 * 2 = 24
+training:
+  # Training mode: "test" or "full"
+  # test: uses small subset (test_subset_size samples) for quick local testing
+  # full: uses entire dataset for production training on H100
+  mode: "full"
+
+  # batch_size: effective batch size = batch_size * gradient_accumulation_steps
+  # RTX 3060 (12GB): batch_size=2, gradient_accumulation=8
+  # RTX 3090 (24GB): batch_size=8, gradient_accumulation=4
+  # H100 (80GB): batch_size=16, gradient_accumulation=2
+  batch_size: 4
   gradient_accumulation_steps: 4
 
   # Learning rate
-  learning_rate: 2e-5  # Slightly higher for faster convergence
+  learning_rate: 2e-5
 
   # Epochs
   epochs: 3
 
   # Max sequence length
-  # Increased to 512 to support 350 words per sentence (~455 tokens at 1.3 tokens/word)
   max_length: 512
 
   # Gradient clipping
@@ -61,27 +64,19 @@ training:
   eval_steps: 500
   save_steps: 500
 
-  # Quantization for memory efficiency
-  # DISABLED for RTX 5090 - use BF16 instead for better quality
-  # 8-bit/4-bit can cause PEFT/LoRA compatibility issues
-  load_in_8bit: false
-  load_in_4bit: false
-
-  # LoRA settings
+  # LoRA settings for efficient fine-tuning
   use_peft: true
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.1
 
 api:
-  # API server batch size (can be smaller for real-time inference)
+  # API server batch size
   batch_size: 8
 
   # Inference optimization
-  # Larger batch_size = faster throughput but more memory
   inference_batch_size: 32
-  use_fp16: true  # Half precision for 2x speed (CUDA only)
-  max_batch_tokens: 8192  # Max tokens per batch (prevents OOM)
+  max_batch_tokens: 8192
 
   # Server settings
   host: "0.0.0.0"
