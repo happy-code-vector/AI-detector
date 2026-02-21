@@ -56,8 +56,12 @@ training:
   # Gradient clipping
   max_grad_norm: 1.0
 
-  # Warmup steps
-  warmup_steps: 500
+  # Warmup: use ratio (scales with dataset size)
+  # 0.05 = 5% of training steps for warmup
+  warmup_ratio: 0.05
+
+  # Weight decay for regularization (prevents overfitting)
+  weight_decay: 0.01
 
   # Logging/evaluation steps
   logging_steps: 50

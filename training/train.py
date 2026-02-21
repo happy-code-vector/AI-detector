@@ -93,7 +93,7 @@ def load_config(config_path: Optional[str] = None, mode: str = "full") -> Dict:
     # Ensure numeric values are properly typed
     numeric_fields = [
         "epochs", "batch_size", "learning_rate", "max_length",
-        "warmup_steps", "logging_steps", "eval_steps", "save_steps",
+        "warmup_ratio", "weight_decay", "logging_steps", "eval_steps", "save_steps",
         "train_split", "eval_split", "test_split",
         "lora_r", "lora_alpha", "lora_dropout"
     ]
@@ -278,7 +278,8 @@ def train_model(
         per_device_eval_batch_size=config["batch_size"],
         gradient_accumulation_steps=config.get("gradient_accumulation_steps", 1),
         learning_rate=config["learning_rate"],
-        warmup_steps=config["warmup_steps"],
+        warmup_ratio=config.get("warmup_ratio", 0.05),
+        weight_decay=config.get("weight_decay", 0.01),
         logging_steps=config["logging_steps"],
         eval_steps=config["eval_steps"],
         save_steps=config["save_steps"],
