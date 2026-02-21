@@ -1,9 +1,7 @@
 """Model service for AI text detection inference."""
 
 import re
-import time
-import traceback
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -181,10 +179,10 @@ class ModelService:
             self._model.to(self._device)
             self._model.eval()
 
-            # Use half precision for faster inference (if CUDA available)
-            if self._device == "cuda":
-                print("Enabling FP16 for faster inference...")
-                self._model.half()
+            # Use BF16 for faster inference (if CUDA available and supported)
+            if self._device == "cuda" and torch.cuda.is_bf16_supported():
+                print("Enabling BF16 for faster inference...")
+                self._model = self._model.to(torch.bfloat16)
 
             # Extract version from path or config
             self._model_version = model_path.name

@@ -97,7 +97,7 @@ def get_data_path() -> Path:
         test_path = data_config.get("test_data_path", "training/data/custom/test_subset.json")
         return project_root / test_path
     else:
-        full_path = data_config.get("full_data_path", "training/data/custom/AI-modification.json")
+        full_path = data_config.get("full_data_path", "training/data/custom/all_datasets_combined.json")
         return project_root / full_path
 
 

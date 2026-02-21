@@ -1,6 +1,5 @@
 """Shared configuration utilities for AI Detector API."""
 
-import os
 from pathlib import Path
 from typing import Dict, Any
 
@@ -83,4 +82,4 @@ def get_max_sentences() -> int:
 
 def get_max_words_per_sentence() -> int:
     """Get max words per sentence from shared config."""
-    return get_data_config().get("max_words_per_sentence", 50)
+    return get_data_config().get("max_words_per_sentence", 350)

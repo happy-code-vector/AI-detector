@@ -7,24 +7,13 @@ from typing import Dict, Optional
 
 import torch
 import yaml
-from torch.utils.data import DataLoader, random_split
-from tqdm import tqdm
-from transformers import (
-    Trainer,
-    TrainingArguments,
-    get_linear_schedule_with_warmup,
-)
+from torch.utils.data import random_split
+from transformers import Trainer, TrainingArguments
 
 from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
-from shared_config import (
-    load_shared_config,
-    get_checkpoint_dir,
-    get_data_path,
-    get_test_subset_size,
-    get_training_mode,
-)
+from shared_config import load_shared_config, get_checkpoint_dir, get_data_path, get_test_subset_size
 
 # PEFT imports
 try:
@@ -364,7 +353,7 @@ def main():
     # Create test subset if requested or if in test mode and subset doesn't exist
     project_root = training_dir.parent
     test_subset_path = project_root / "training/data/custom/test_subset.json"
-    full_data_path = project_root / "training/data/custom/AI-modification.json"
+    full_data_path = project_root / "training/data/custom/all_datasets_combined.json"
 
     if args.create_test_subset or (args.mode == "test" and not test_subset_path.exists()):
         if full_data_path.exists():

@@ -1,16 +1,10 @@
 """Model definition for AI text detection."""
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import torch
 import torch.nn as nn
-from transformers import (
-    AutoConfig,
-    AutoModelForTokenClassification,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-)
+from transformers import AutoConfig, AutoModelForTokenClassification, AutoTokenizer
 
 
 class AIDetectorModel(nn.Module):
