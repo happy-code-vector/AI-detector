@@ -11,19 +11,15 @@ tqdm
 numpy
 pyyaml
 
-# PEFT/LoRA (optional - for efficient training)
+# PEFT/LoRA for efficient training
 peft>=0.18.0
-
-# Quantization (optional - has issues with Windows/DeBERTa)
-# Comment out if not using or if on Windows
-bitsandbytes>=0.48.0
 
 # Tokenization
 sentencepiece
 protobuf
 
 # Optional: experiment tracking
-wandb
+# wandb
 
 # Additional utilities
 colorama
