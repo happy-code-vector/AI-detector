@@ -13,7 +13,7 @@ from transformers import Trainer, TrainingArguments
 from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
-from shared_config import load_shared_config, get_checkpoint_dir, get_data_path, get_test_subset_size
+from shared_config import load_shared_config, get_checkpoint_dir, get_test_subset_size
 
 # PEFT imports
 try:
@@ -83,8 +83,12 @@ def load_config(config_path: Optional[str] = None, mode: str = "full") -> Dict:
     if "output_dir" in config:
         config["output_dir"] = str(project_root / config["output_dir"])
 
-    # Set data path based on mode
-    config["custom_data_path"] = str(get_data_path())
+    # Set data path based on mode (use passed mode, not config file mode)
+    if mode == "test":
+        data_path = config.get("test_data_path", "training/data/custom/test_subset.json")
+    else:
+        data_path = config.get("full_data_path", "training/data/custom/all_datasets_combined.json")
+    config["custom_data_path"] = str(project_root / data_path)
 
     # Ensure numeric values are properly typed
     numeric_fields = [
