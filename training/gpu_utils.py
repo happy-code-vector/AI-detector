@@ -30,6 +30,17 @@ class GPUConfig:
 
 # GPU presets with optimal configurations
 GPU_PRESETS = {
+    # Cloud/Colab GPUs
+    "T4": GPUConfig(
+        name="T4",
+        vram_gb=16,
+        batch_size=4,
+        gradient_accumulation_steps=4,
+        attention_implementation="sdpa",
+        torch_dtype="float16",  # T4 doesn't support BF16 well
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
     # Consumer GPUs
     "RTX 3060": GPUConfig(
         name="RTX 3060",
@@ -62,6 +73,16 @@ GPU_PRESETS = {
         recommended_epochs=3,
     ),
     # Datacenter GPUs
+    "A100": GPUConfig(
+        name="A100",
+        vram_gb=40,  # or 80GB variant
+        batch_size=12,
+        gradient_accumulation_steps=1,
+        attention_implementation="flash_attention_2",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
     "H100": GPUConfig(
         name="H100",
         vram_gb=80,
@@ -126,12 +147,16 @@ def detect_gpu() -> Optional[str]:
 
     # Check for partial matches
     gpu_lower = gpu_name.lower()
-    if "rtx 3060" in gpu_lower or "rtx3060" in gpu_lower:
+    if "tesla t4" in gpu_lower or "t4" in gpu_lower:
+        return "T4"
+    elif "rtx 3060" in gpu_lower or "rtx3060" in gpu_lower:
         return "RTX 3060"
     elif "rtx 3090" in gpu_lower or "rtx3090" in gpu_lower:
         return "RTX 3090"
     elif "rtx 4090" in gpu_lower or "rtx4090" in gpu_lower:
         return "RTX 4090"
+    elif "a100" in gpu_lower:
+        return "A100"
     elif "h100" in gpu_lower:
         return "H100"
     elif "h200" in gpu_lower:

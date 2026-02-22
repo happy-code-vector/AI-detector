@@ -368,7 +368,7 @@ def main():
         "--gpu",
         type=str,
         default=None,
-        choices=["RTX 3060", "RTX 3090", "RTX 4090", "H100", "H200", "B200"],
+        choices=["T4", "RTX 3060", "RTX 3090", "RTX 4090", "A100", "H100", "H200", "B200"],
         help="Manually specify GPU type (auto-detected if not set)",
     )
     parser.add_argument(
