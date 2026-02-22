@@ -14,6 +14,7 @@ from data_loader import AIDetectionDataset, load_custom_dataset
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 from shared_config import load_shared_config, get_checkpoint_dir, get_test_subset_size
+from gpu_utils import get_gpu_config, print_gpu_info, get_training_config_override
 
 # PEFT imports
 try:
@@ -46,13 +47,14 @@ def compute_metrics(eval_pred) -> Dict[str, float]:
     }
 
 
-def load_config(config_path: Optional[str] = None, mode: str = "full") -> Dict:
+def load_config(config_path: Optional[str] = None, mode: str = "full", auto_gpu: bool = True) -> Dict:
     """
     Load training configuration.
 
     Args:
         config_path: Optional path to config file
         mode: "test" or "full" training mode
+        auto_gpu: Auto-configure based on detected GPU
 
     Returns:
         Configuration dictionary
@@ -73,6 +75,11 @@ def load_config(config_path: Optional[str] = None, mode: str = "full") -> Dict:
         config = {**base_config, **overrides}
     else:
         config = base_config
+
+    # Apply GPU auto-configuration
+    if auto_gpu and torch.cuda.is_available():
+        gpu_overrides = get_training_config_override()
+        config.update(gpu_overrides)
 
     # Set mode
     config["mode"] = mode
@@ -212,6 +219,8 @@ def train_model(
     config_path: Optional[str] = None,
     output_dir: Optional[str] = None,
     mode: str = "full",
+    gpu_name: Optional[str] = None,
+    auto_gpu: bool = True,
 ):
     """
     Train the AI detection model.
@@ -220,9 +229,16 @@ def train_model(
         config_path: Optional path to configuration file
         output_dir: Override output directory from config
         mode: "test" for quick testing, "full" for production training
+        gpu_name: Manually specify GPU type
+        auto_gpu: Auto-configure based on detected GPU
     """
-    # Load configuration
-    config = load_config(config_path, mode)
+    # Load configuration with GPU auto-config
+    config = load_config(config_path, mode, auto_gpu=auto_gpu)
+
+    # Override with manually specified GPU
+    if gpu_name and auto_gpu:
+        gpu_overrides = get_training_config_override(gpu_name)
+        config.update(gpu_overrides)
 
     if output_dir:
         config["output_dir"] = output_dir
@@ -348,8 +364,31 @@ def main():
         action="store_true",
         help="Create test subset from full dataset",
     )
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        choices=["RTX 3060", "RTX 3090", "RTX 4090", "H100", "H200", "B200"],
+        help="Manually specify GPU type (auto-detected if not set)",
+    )
+    parser.add_argument(
+        "--no-auto-gpu",
+        action="store_true",
+        help="Disable automatic GPU configuration (use config file values)",
+    )
+    parser.add_argument(
+        "--list-gpus",
+        action="store_true",
+        help="List supported GPU configurations and exit",
+    )
 
     args = parser.parse_args()
+
+    # List supported GPUs and exit
+    if args.list_gpus:
+        from gpu_utils import list_supported_gpus
+        list_supported_gpus()
+        return
 
     # Change to training directory
     training_dir = Path(__file__).parent
@@ -371,7 +410,13 @@ def main():
             print(f"Warning: Full dataset not found at {full_data_path}")
 
     # Train model
-    train_model(args.config, args.output, args.mode)
+    train_model(
+        config_path=args.config,
+        output_dir=args.output,
+        mode=args.mode,
+        gpu_name=args.gpu,
+        auto_gpu=not args.no_auto_gpu,
+    )
 
 
 if __name__ == "__main__":

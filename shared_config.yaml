@@ -1,6 +1,24 @@
 # Shared configuration for AI Detector project
 # This is the single source of truth for model and data parameters
 # Both training and API read from this file
+#
+# GPU AUTO-CONFIGURATION:
+# Training automatically detects GPU and applies optimal settings.
+# To disable: python train.py --no-auto-gpu
+# To manually set: python train.py --gpu "H100"
+# To list supported: python train.py --list-gpus
+#
+# GPU PRESETS (auto-applied):
+# ┌──────────┬───────┬─────────┬────────────────┬─────────────────────┐
+# │ GPU      │ VRAM  │ Batch   │ Grad Acc       │ Effective Batch     │
+# ├──────────┼───────┼─────────┼────────────────┼─────────────────────┤
+# │ RTX 3060 │ 12GB  │ 2       │ 8              │ 16                  │
+# │ RTX 3090 │ 24GB  │ 8       │ 2              │ 16                  │
+# │ RTX 4090 │ 24GB  │ 8       │ 2              │ 16                  │
+# │ H100     │ 80GB  │ 16      │ 1              │ 16                  │
+# │ H200     │ 141GB │ 24      │ 1              │ 24                  │
+# │ B200     │ 192GB │ 32      │ 1              │ 32                  │
+# └──────────┴───────┴─────────┴────────────────┴─────────────────────┘
 
 model:
   # Base model name from HuggingFace
@@ -16,7 +34,7 @@ data:
   # Full dataset path (relative to project root)
   full_data_path: "training/data/custom/all_datasets_combined.json"
 
-  # Test dataset path (subset for local testing on RTX 3060)
+  # Test dataset path (subset for local testing)
   test_data_path: "training/data/custom/test_subset.json"
 
   # Text processing limits
@@ -29,18 +47,15 @@ data:
   test_split: 0.1
 
   # Test mode: use small subset for quick testing
-  test_subset_size: 5000  # Number of samples for test training
+  test_subset_size: 5000
 
 training:
   # Training mode: "test" or "full"
-  # test: uses small subset (test_subset_size samples) for quick local testing
-  # full: uses entire dataset for production training on H100
   mode: "full"
 
-  # batch_size: effective batch size = batch_size * gradient_accumulation_steps
-  # RTX 3060 (12GB): batch_size=2, gradient_accumulation=8
-  # RTX 3090 (24GB): batch_size=8, gradient_accumulation=4
-  # H100 (80GB): batch_size=16, gradient_accumulation=2
+  # NOTE: batch_size and gradient_accumulation_steps are AUTO-CONFIGURED
+  # based on detected GPU. Values below are fallback defaults.
+  # Use --no-auto-gpu to disable auto-configuration.
   batch_size: 4
   gradient_accumulation_steps: 4
 
@@ -57,10 +72,9 @@ training:
   max_grad_norm: 1.0
 
   # Warmup: use ratio (scales with dataset size)
-  # 0.05 = 5% of training steps for warmup
   warmup_ratio: 0.05
 
-  # Weight decay for regularization (prevents overfitting)
+  # Weight decay for regularization
   weight_decay: 0.01
 
   # Logging/evaluation steps
