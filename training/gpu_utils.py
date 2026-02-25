@@ -72,7 +72,27 @@ GPU_PRESETS = {
         fp8_available=False,
         recommended_epochs=3,
     ),
-    # Datacenter GPUs
+    # Datacenter/Cloud GPUs
+    "A10G": GPUConfig(
+        name="A10G",
+        vram_gb=24,
+        batch_size=6,
+        gradient_accumulation_steps=3,
+        attention_implementation="sdpa",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
+    "A40": GPUConfig(
+        name="A40",
+        vram_gb=48,
+        batch_size=10,
+        gradient_accumulation_steps=2,
+        attention_implementation="flash_attention_2",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
     "A100": GPUConfig(
         name="A100",
         vram_gb=40,  # or 80GB variant
