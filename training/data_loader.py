@@ -32,37 +32,40 @@ class AIDetectionDataset(Dataset):
         """
         self.max_length = max_length
 
-        # Pre-tokenize all data for faster training
-        print(f"Pre-tokenizing {len(texts)} samples...")
+        # Batch tokenize all texts at once (Rust-parallelized, very fast)
+        print(f"Batch tokenizing {len(texts)} samples...")
+        encodings = tokenizer(
+            texts,
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+            return_offsets_mapping=True,
+        )
+        print(f"Tokenization complete! Aligning labels...")
+
+        # Convert to list of individual encodings and align labels
         self.encodings = []
+        offset_mappings = encodings["offset_mapping"].tolist()
+
         for i, (text, word_labels) in enumerate(zip(texts, labels)):
             if i % 50000 == 0:
-                print(f"  Tokenized {i}/{len(texts)} samples...")
+                print(f"  Processed {i}/{len(texts)} samples...")
 
-            encoding = tokenizer(
-                text,
-                max_length=max_length,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-                return_offsets_mapping=True,
-            )
-
-            # Remove batch dimension
-            encoding = {k: v.squeeze(0) for k, v in encoding.items()}
+            encoding = {
+                "input_ids": encodings["input_ids"][i],
+                "attention_mask": encodings["attention_mask"][i],
+            }
 
             # Align word labels to tokens
             token_labels = self._align_labels_to_tokens(
-                encoding["offset_mapping"].tolist(), word_labels, text
+                offset_mappings[i], word_labels, text
             )
-
-            # Remove offset_mapping (not needed for training)
-            encoding.pop("offset_mapping")
             encoding["labels"] = token_labels
 
             self.encodings.append(encoding)
 
-        print(f"Pre-tokenization complete!")
+        print(f"Dataset ready!")
 
     def __len__(self) -> int:
         return len(self.encodings)
