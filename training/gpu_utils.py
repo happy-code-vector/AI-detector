@@ -72,6 +72,37 @@ GPU_PRESETS = {
         fp8_available=False,
         recommended_epochs=3,
     ),
+    # Workstation GPUs
+    "A4000": GPUConfig(
+        name="A4000",
+        vram_gb=16,
+        batch_size=4,
+        gradient_accumulation_steps=4,
+        attention_implementation="sdpa",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
+    "A5000": GPUConfig(
+        name="A5000",
+        vram_gb=24,
+        batch_size=6,
+        gradient_accumulation_steps=3,
+        attention_implementation="flash_attention_2",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
+    "A6000": GPUConfig(
+        name="A6000",
+        vram_gb=48,
+        batch_size=10,
+        gradient_accumulation_steps=2,
+        attention_implementation="flash_attention_2",
+        torch_dtype="bfloat16",
+        fp8_available=False,
+        recommended_epochs=3,
+    ),
     # Datacenter/Cloud GPUs
     "A10G": GPUConfig(
         name="A10G",
@@ -169,12 +200,22 @@ def detect_gpu() -> Optional[str]:
     gpu_lower = gpu_name.lower()
     if "tesla t4" in gpu_lower or "t4" in gpu_lower:
         return "T4"
+    elif "a4000" in gpu_lower:
+        return "A4000"
+    elif "a5000" in gpu_lower:
+        return "A5000"
+    elif "a6000" in gpu_lower:
+        return "A6000"
     elif "rtx 3060" in gpu_lower or "rtx3060" in gpu_lower:
         return "RTX 3060"
     elif "rtx 3090" in gpu_lower or "rtx3090" in gpu_lower:
         return "RTX 3090"
     elif "rtx 4090" in gpu_lower or "rtx4090" in gpu_lower:
         return "RTX 4090"
+    elif "a10g" in gpu_lower:
+        return "A10G"
+    elif "a40" in gpu_lower and "a100" not in gpu_lower:
+        return "A40"
     elif "a100" in gpu_lower:
         return "A100"
     elif "h100" in gpu_lower:
