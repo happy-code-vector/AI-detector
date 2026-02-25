@@ -304,6 +304,7 @@ def get_training_config_override(gpu_name: Optional[str] = None) -> Dict[str, An
     return {
         "batch_size": gpu_config.batch_size,
         "gradient_accumulation_steps": gpu_config.gradient_accumulation_steps,
+        "torch_dtype": gpu_config.torch_dtype,  # For fp16/bf16 selection
         "gpu_config": gpu_config.to_dict(),
     }
 
