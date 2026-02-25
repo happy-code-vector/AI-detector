@@ -306,7 +306,7 @@ def train_model(
         per_device_eval_batch_size=config["batch_size"],
         gradient_accumulation_steps=config.get("gradient_accumulation_steps", 1),
         learning_rate=config["learning_rate"],
-        warmup_ratio=config.get("warmup_ratio", 0.05),
+        warmup_steps=int(0.05 * (336632 // config["batch_size"])),  # 5% of train steps
         weight_decay=config.get("weight_decay", 0.01),
         logging_steps=config["logging_steps"],
         eval_steps=config["eval_steps"],
@@ -322,6 +322,10 @@ def train_model(
         # Use appropriate precision based on GPU
         bf16=config.get("torch_dtype", "bfloat16") == "bfloat16",
         fp16=config.get("torch_dtype", "bfloat16") == "float16",
+        # Data loading optimizations
+        dataloader_num_workers=4,
+        dataloader_pin_memory=True,
+        dataloader_prefetch_factor=2,
     )
 
     # Initialize trainer

@@ -30,41 +30,45 @@ class AIDetectionDataset(Dataset):
             tokenizer: Pre-trained tokenizer
             max_length: Maximum sequence length
         """
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
         self.max_length = max_length
 
+        # Pre-tokenize all data for faster training
+        print(f"Pre-tokenizing {len(texts)} samples...")
+        self.encodings = []
+        for i, (text, word_labels) in enumerate(zip(texts, labels)):
+            if i % 50000 == 0:
+                print(f"  Tokenized {i}/{len(texts)} samples...")
+
+            encoding = tokenizer(
+                text,
+                max_length=max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+                return_offsets_mapping=True,
+            )
+
+            # Remove batch dimension
+            encoding = {k: v.squeeze(0) for k, v in encoding.items()}
+
+            # Align word labels to tokens
+            token_labels = self._align_labels_to_tokens(
+                encoding["offset_mapping"].tolist(), word_labels, text
+            )
+
+            # Remove offset_mapping (not needed for training)
+            encoding.pop("offset_mapping")
+            encoding["labels"] = token_labels
+
+            self.encodings.append(encoding)
+
+        print(f"Pre-tokenization complete!")
+
     def __len__(self) -> int:
-        return len(self.texts)
+        return len(self.encodings)
 
     def __getitem__(self, idx: int) -> Dict:
-        text = self.texts[idx]
-        word_labels = self.labels[idx]
-
-        # Tokenize with word-level alignment
-        encoding = self.tokenizer(
-            text,
-            max_length=self.max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_offsets_mapping=True,
-        )
-
-        # Remove batch dimension
-        encoding = {k: v.squeeze(0) for k, v in encoding.items()}
-
-        # Align word labels to tokens
-        token_labels = self._align_labels_to_tokens(
-            encoding["offset_mapping"], word_labels, text
-        )
-
-        # Remove offset_mapping (not needed for training)
-        encoding.pop("offset_mapping")
-
-        encoding["labels"] = token_labels
-        return encoding
+        return self.encodings[idx]
 
     def _align_labels_to_tokens(
         self, offset_mapping, word_labels: List[int], text: str
