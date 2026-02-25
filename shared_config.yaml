@@ -8,28 +8,27 @@
 # To manually set: python train.py --gpu "H100"
 # To list supported: python train.py --list-gpus
 #
-# NOTE: Flash Attention 2 requires: pip install flash-attn --no-build-isolation
-# If not installed, falls back to "eager" implementation.
+# NOTE: DeBERTa-v2 only supports "eager" attention (no Flash Attention 2 or SDPA).
+# See: https://github.com/huggingface/transformers/issues/28005
 #
 # GPU PRESETS (auto-applied):
-# ┌──────────┬───────┬─────────┬────────────────┬─────────────────────┬───────────┬───────────┐
-# │ GPU      │ VRAM  │ Batch   │ Grad Acc       │ Effective Batch     │ Precision │ Attention │
-# ├──────────┼───────┼─────────┼────────────────┼─────────────────────┼───────────┼───────────┤
-# │ T4       │ 16GB  │ 4       │ 4              │ 16                  │ FP16      │ eager     │
-# │ RTX 3060 │ 12GB  │ 2       │ 8              │ 16                  │ BF16      │ eager     │
-# │ RTX 3090 │ 24GB  │ 8       │ 2              │ 16                  │ BF16      │ flash*    │
-# │ RTX 4090 │ 24GB  │ 8       │ 2              │ 16                  │ BF16      │ flash*    │
-# │ A4000    │ 16GB  │ 4       │ 4              │ 16                  │ BF16      │ eager     │
-# │ A5000    │ 24GB  │ 6       │ 3              │ 18                  │ BF16      │ flash*    │
-# │ A6000    │ 48GB  │ 10      │ 2              │ 20                  │ BF16      │ flash*    │
-# │ A10G     │ 24GB  │ 6       │ 3              │ 18                  │ BF16      │ eager     │
-# │ A40      │ 48GB  │ 10      │ 2              │ 20                  │ BF16      │ flash*    │
-# │ A100     │ 40GB  │ 12      │ 1              │ 12                  │ BF16      │ flash*    │
-# │ H100     │ 80GB  │ 16      │ 1              │ 16                  │ BF16/FP8  │ flash*    │
-# │ H200     │ 141GB │ 24      │ 1              │ 24                  │ BF16/FP8  │ flash*    │
-# │ B200     │ 192GB │ 32      │ 1              │ 32                  │ FP8       │ flash*    │
-# └──────────┴───────┴─────────┴────────────────┴─────────────────────┴───────────┴───────────┘
-# * flash = flash_attention_2 (requires flash-attn package, falls back to eager if not installed)
+# ┌──────────┬───────┬─────────┬────────────────┬─────────────────────┬───────────┐
+# │ GPU      │ VRAM  │ Batch   │ Grad Acc       │ Effective Batch     │ Precision │
+# ├──────────┼───────┼─────────┼────────────────┼─────────────────────┼───────────┤
+# │ T4       │ 16GB  │ 4       │ 4              │ 16                  │ FP16      │
+# │ RTX 3060 │ 12GB  │ 2       │ 8              │ 16                  │ BF16      │
+# │ RTX 3090 │ 24GB  │ 8       │ 2              │ 16                  │ BF16      │
+# │ RTX 4090 │ 24GB  │ 8       │ 2              │ 16                  │ BF16      │
+# │ A4000    │ 16GB  │ 4       │ 4              │ 16                  │ BF16      │
+# │ A5000    │ 24GB  │ 6       │ 3              │ 18                  │ BF16      │
+# │ A6000    │ 48GB  │ 10      │ 2              │ 20                  │ BF16      │
+# │ A10G     │ 24GB  │ 6       │ 3              │ 18                  │ BF16      │
+# │ A40      │ 48GB  │ 10      │ 2              │ 20                  │ BF16      │
+# │ A100     │ 40GB  │ 12      │ 1              │ 12                  │ BF16      │
+# │ H100     │ 80GB  │ 16      │ 1              │ 16                  │ BF16      │
+# │ H200     │ 141GB │ 24      │ 1              │ 24                  │ BF16      │
+# │ B200     │ 192GB │ 32      │ 1              │ 32                  │ BF16      │
+# └──────────┴───────┴─────────┴────────────────┴─────────────────────┴───────────┘
 
 model:
   # Base model name from HuggingFace

@@ -6,35 +6,6 @@ import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModelForTokenClassification, AutoTokenizer
 
-# Check for Flash Attention 2 availability
-def _check_flash_attn_available() -> bool:
-    """Check if Flash Attention 2 is available."""
-    if not torch.cuda.is_available():
-        return False
-    try:
-        import flash_attn
-        # Check if GPU architecture is supported (Ampere+ for FA2)
-        major, _ = torch.cuda.get_device_capability()
-        if major < 8:  # Pre-Ampere (T4, etc.) don't support FA2 well
-            return False
-        return True
-    except ImportError:
-        return False
-
-
-def _get_attention_implementation():
-    """Get the best available attention implementation for DeBERTa."""
-    if not torch.cuda.is_available():
-        return "eager"
-
-    # Try Flash Attention 2 first (best for H100, RTX 3090)
-    if _check_flash_attn_available():
-        return "flash_attention_2"
-
-    # DeBERTa-v2 doesn't support SDPA, fall back to eager
-    # See: https://github.com/huggingface/transformers/issues/28005
-    return "eager"
-
 
 class AIDetectorModel(nn.Module):
     """Wrapper for DeBERTa-v3 token classification model."""
@@ -53,27 +24,16 @@ class AIDetectorModel(nn.Module):
             model_name: Hugging Face model name
             num_labels: Number of classification labels (2: human=0, AI=1)
             cache_dir: Directory to cache downloaded models
-            attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
+            attn_implementation: Attention implementation (DeBERTa-v2 only supports "eager")
         """
         super().__init__()
         self.model_name = model_name
         self.num_labels = num_labels
 
-        # Auto-detect best attention implementation if not specified
-        if attn_implementation is None:
-            attn_implementation = _get_attention_implementation()
-        else:
-            # Validate requested attention implementation is available
-            if attn_implementation == "flash_attention_2":
-                if not _check_flash_attn_available():
-                    print("⚠️  Flash Attention 2 requested but not available (install flash-attn or GPU not supported)")
-                    print("   Falling back to eager implementation")
-                    attn_implementation = "eager"
-            elif attn_implementation == "sdpa":
-                # DeBERTa-v2 doesn't support SDPA
-                print("⚠️  SDPA requested but DeBERTa-v2 doesn't support it")
-                print("   Falling back to eager implementation")
-                attn_implementation = "eager"
+        # DeBERTa-v2 only supports eager attention
+        # Flash Attention 2 and SDPA are not supported:
+        # https://github.com/huggingface/transformers/issues/28005
+        attn_implementation = "eager"
 
         print(f"Using attention implementation: {attn_implementation}")
 
@@ -214,7 +174,7 @@ class AIDetectorModel(nn.Module):
 
         Args:
             model_path: Path to saved model directory
-            attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
+            attn_implementation: Ignored (DeBERTa-v2 only supports "eager")
 
         Returns:
             Loaded AIDetectorModel instance
@@ -223,13 +183,10 @@ class AIDetectorModel(nn.Module):
         instance.model_name = model_path
         instance.num_labels = 2
 
-        # Auto-detect best attention implementation if not specified
-        if attn_implementation is None:
-            attn_implementation = _get_attention_implementation()
-
+        # DeBERTa-v2 only supports eager attention
         instance.model = AutoModelForTokenClassification.from_pretrained(
             model_path,
-            attn_implementation=attn_implementation,
+            attn_implementation="eager",
             torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
         )
         instance.tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -249,7 +206,7 @@ def get_model(
     Args:
         model_name: Base model name (for new model)
         pretrained_path: Path to fine-tuned model (optional)
-        attn_implementation: Attention implementation ("flash_attention_2", "sdpa", "eager")
+        attn_implementation: Ignored (DeBERTa-v2 only supports "eager")
 
     Returns:
         AIDetectorModel instance
