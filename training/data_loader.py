@@ -5,14 +5,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
+import torch
 from datasets import Dataset as HFDataset
 from datasets import load_dataset
 from torch.utils.data import Dataset
+from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 
 class AIDetectionDataset(Dataset):
-    """Dataset for word-level AI text detection."""
+    """Dataset for word-level AI text detection with pre-tokenization."""
 
     def __init__(
         self,
@@ -22,7 +24,7 @@ class AIDetectionDataset(Dataset):
         max_length: int = 128,
     ):
         """
-        Initialize dataset.
+        Initialize dataset with pre-tokenization.
 
         Args:
             texts: List of sentences
@@ -30,48 +32,57 @@ class AIDetectionDataset(Dataset):
             tokenizer: Pre-trained tokenizer
             max_length: Maximum sequence length
         """
+        self.tokenizer = tokenizer
         self.max_length = max_length
 
+        print(f"Pre-tokenizing {len(texts)} samples...")
+
         # Batch tokenize all texts at once (Rust-parallelized, very fast)
-        print(f"Batch tokenizing {len(texts)} samples...")
-        encodings = tokenizer(
-            texts,
-            max_length=max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-            return_offsets_mapping=True,
-        )
-        print(f"Tokenization complete! Aligning labels...")
+        batch_size = 10000  # Process in chunks to show progress
+        all_input_ids = []
+        all_attention_masks = []
+        all_labels = []
 
-        # Convert to list of individual encodings and align labels
-        self.encodings = []
-        offset_mappings = encodings["offset_mapping"].tolist()
+        for i in tqdm(range(0, len(texts), batch_size), desc="Tokenizing"):
+            batch_texts = texts[i:i + batch_size]
+            batch_labels = labels[i:i + batch_size]
 
-        for i, (text, word_labels) in enumerate(zip(texts, labels)):
-            if i % 50000 == 0:
-                print(f"  Processed {i}/{len(texts)} samples...")
-
-            encoding = {
-                "input_ids": encodings["input_ids"][i],
-                "attention_mask": encodings["attention_mask"][i],
-            }
-
-            # Align word labels to tokens
-            token_labels = self._align_labels_to_tokens(
-                offset_mappings[i], word_labels, text
+            # Batch tokenization (Rust-parallelized)
+            encodings = tokenizer(
+                batch_texts,
+                max_length=max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+                return_offsets_mapping=True,
             )
-            encoding["labels"] = token_labels
 
-            self.encodings.append(encoding)
+            # Align labels for each sample in batch
+            for j, (text, word_labels) in enumerate(zip(batch_texts, batch_labels)):
+                offset_mapping = encodings["offset_mapping"][j].tolist()
+                token_labels = self._align_labels_to_tokens(
+                    offset_mapping, word_labels, text
+                )
+                all_input_ids.append(encodings["input_ids"][j])
+                all_attention_masks.append(encodings["attention_mask"][j])
+                all_labels.append(torch.tensor(token_labels, dtype=torch.long))
 
-        print(f"Dataset ready!")
+        # Stack all tensors
+        self.input_ids = torch.stack(all_input_ids)
+        self.attention_masks = torch.stack(all_attention_masks)
+        self.labels_list = all_labels
+
+        print(f"Pre-tokenization complete! Dataset ready with {len(texts)} samples")
 
     def __len__(self) -> int:
-        return len(self.encodings)
+        return len(self.input_ids)
 
     def __getitem__(self, idx: int) -> Dict:
-        return self.encodings[idx]
+        return {
+            "input_ids": self.input_ids[idx],
+            "attention_mask": self.attention_masks[idx],
+            "labels": self.labels_list[idx],
+        }
 
     def _align_labels_to_tokens(
         self, offset_mapping, word_labels: List[int], text: str
@@ -88,7 +99,6 @@ class AIDetectionDataset(Dataset):
             Token-level labels (with -100 for special tokens)
         """
         token_labels = []
-        word_idx = 0
         words = text.split()
 
         for offset in offset_mapping:

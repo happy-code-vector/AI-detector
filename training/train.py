@@ -322,10 +322,9 @@ def train_model(
         # Use appropriate precision based on GPU
         bf16=config.get("torch_dtype", "bfloat16") == "bfloat16",
         fp16=config.get("torch_dtype", "bfloat16") == "float16",
-        # Data loading optimizations
+        # Data loading - pre-tokenized data is fast, minimal workers needed
         dataloader_num_workers=4,
         dataloader_pin_memory=True,
-        dataloader_prefetch_factor=2,
     )
 
     # Initialize trainer
