@@ -11,6 +11,8 @@ pyyaml
 peft>=0.6.0
 numpy>=1.24.0
 
-# Optional: Flash Attention 2 (requires CUDA, install separately)
-# pip install flash-attn --no-build-isolation
+# Optional: Flash Attention 2 for 2-4x faster inference on Ampere+ GPUs
+# (RTX 3090/4090, A100, H100, H200, B200, A40, A5000, A6000)
+# NOT supported on: T4, RTX 3060, A4000, A10G (uses eager fallback)
+# Install with: pip install flash-attn --no-build-isolation
 # flash-attn>=2.0.0
