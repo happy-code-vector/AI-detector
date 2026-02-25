@@ -307,7 +307,9 @@ def train_model(
         report_to="none",
         save_total_limit=3,
         max_grad_norm=config.get("max_grad_norm", 1.0),
-        bf16=True,  # BF16 for RTX 3090/5090/H100
+        # Use appropriate precision based on GPU
+        bf16=config.get("torch_dtype", "bfloat16") == "bfloat16",
+        fp16=config.get("torch_dtype", "bfloat16") == "float16",
     )
 
     # Initialize trainer
