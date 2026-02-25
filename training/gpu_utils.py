@@ -36,7 +36,7 @@ GPU_PRESETS = {
         vram_gb=16,
         batch_size=4,
         gradient_accumulation_steps=4,
-        attention_implementation="sdpa",
+        attention_implementation="eager",  # T4 doesn't support Flash Attn 2 or SDPA for DeBERTa
         torch_dtype="float16",  # T4 doesn't support BF16 well
         fp8_available=False,
         recommended_epochs=3,
@@ -47,7 +47,7 @@ GPU_PRESETS = {
         vram_gb=12,
         batch_size=2,
         gradient_accumulation_steps=8,
-        attention_implementation="sdpa",
+        attention_implementation="eager",  # Use eager unless flash-attn installed
         torch_dtype="bfloat16",
         fp8_available=False,
         recommended_epochs=3,
@@ -78,7 +78,7 @@ GPU_PRESETS = {
         vram_gb=16,
         batch_size=4,
         gradient_accumulation_steps=4,
-        attention_implementation="sdpa",
+        attention_implementation="eager",  # DeBERTa-v2 doesn't support SDPA
         torch_dtype="bfloat16",
         fp8_available=False,
         recommended_epochs=3,
@@ -109,7 +109,7 @@ GPU_PRESETS = {
         vram_gb=24,
         batch_size=6,
         gradient_accumulation_steps=3,
-        attention_implementation="sdpa",
+        attention_implementation="eager",  # A10G doesn't support Flash Attn 2 for DeBERTa
         torch_dtype="bfloat16",
         fp8_available=False,
         recommended_epochs=3,
@@ -305,6 +305,7 @@ def get_training_config_override(gpu_name: Optional[str] = None) -> Dict[str, An
         "batch_size": gpu_config.batch_size,
         "gradient_accumulation_steps": gpu_config.gradient_accumulation_steps,
         "torch_dtype": gpu_config.torch_dtype,  # For fp16/bf16 selection
+        "attention_implementation": gpu_config.attention_implementation,  # Top-level for easy access
         "gpu_config": gpu_config.to_dict(),
     }
 

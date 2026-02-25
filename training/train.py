@@ -261,8 +261,20 @@ def train_model(
 
     # Initialize model and tokenizer
     model_name = config.get("name", "microsoft/deberta-v3-large")
+
+    # Get attention implementation (check top-level first, then gpu_config)
+    attn_implementation = config.get("attention_implementation")
+    if attn_implementation is None:
+        gpu_cfg = config.get("gpu_config", {})
+        attn_implementation = gpu_cfg.get("attention_implementation") if isinstance(gpu_cfg, dict) else "eager"
+
     print(f"\nLoading model: {model_name}")
-    model_wrapper = AIDetectorModel(model_name=model_name)
+    print(f"Using attention implementation: {attn_implementation}")
+
+    model_wrapper = AIDetectorModel(
+        model_name=model_name,
+        attn_implementation=attn_implementation,
+    )
     model = model_wrapper.model
     tokenizer = model_wrapper.tokenizer
 

@@ -7,22 +7,32 @@ import torch.nn as nn
 from transformers import AutoConfig, AutoModelForTokenClassification, AutoTokenizer
 
 # Check for Flash Attention 2 availability
+def _check_flash_attn_available() -> bool:
+    """Check if Flash Attention 2 is available."""
+    if not torch.cuda.is_available():
+        return False
+    try:
+        import flash_attn
+        # Check if GPU architecture is supported (Ampere+ for FA2)
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:  # Pre-Ampere (T4, etc.) don't support FA2 well
+            return False
+        return True
+    except ImportError:
+        return False
+
+
 def _get_attention_implementation():
-    """Get the best available attention implementation."""
+    """Get the best available attention implementation for DeBERTa."""
     if not torch.cuda.is_available():
         return "eager"
 
     # Try Flash Attention 2 first (best for H100, RTX 3090)
-    try:
-        import flash_attn
+    if _check_flash_attn_available():
         return "flash_attention_2"
-    except ImportError:
-        pass
 
-    # Fall back to SDPA (PyTorch native, still fast)
-    if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
-        return "sdpa"
-
+    # DeBERTa-v2 doesn't support SDPA, fall back to eager
+    # See: https://github.com/huggingface/transformers/issues/28005
     return "eager"
 
 
@@ -52,6 +62,18 @@ class AIDetectorModel(nn.Module):
         # Auto-detect best attention implementation if not specified
         if attn_implementation is None:
             attn_implementation = _get_attention_implementation()
+        else:
+            # Validate requested attention implementation is available
+            if attn_implementation == "flash_attention_2":
+                if not _check_flash_attn_available():
+                    print("⚠️  Flash Attention 2 requested but not available (install flash-attn or GPU not supported)")
+                    print("   Falling back to eager implementation")
+                    attn_implementation = "eager"
+            elif attn_implementation == "sdpa":
+                # DeBERTa-v2 doesn't support SDPA
+                print("⚠️  SDPA requested but DeBERTa-v2 doesn't support it")
+                print("   Falling back to eager implementation")
+                attn_implementation = "eager"
 
         print(f"Using attention implementation: {attn_implementation}")
 
