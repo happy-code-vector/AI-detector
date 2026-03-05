@@ -10,7 +10,7 @@ import yaml
 from torch.utils.data import random_split
 from transformers import Trainer, TrainingArguments
 
-from data_loader import AIDetectionDataset, load_custom_dataset
+from data_loader import AIDetectionDataset, load_custom_dataset, pretokenize_and_save
 from model import AIDetectorModel
 from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 from shared_config import load_shared_config, get_checkpoint_dir, get_test_subset_size
@@ -163,17 +163,40 @@ def create_test_subset(source_path: str, dest_path: str, subset_size: int) -> No
     print(f"Test subset saved to: {dest_path}")
 
 
-def prepare_datasets(config: Dict, tokenizer) -> tuple:
+def prepare_datasets(config: Dict, tokenizer, pretokenized_path: Optional[str] = None) -> tuple:
     """
     Prepare train and evaluation datasets.
 
     Args:
         config: Training configuration
         tokenizer: Pre-trained tokenizer
+        pretokenized_path: Path to pre-tokenized data (optional)
 
     Returns:
         Tuple of (train_dataset, eval_dataset)
     """
+    # Check if pre-tokenized data is provided
+    if pretokenized_path and Path(pretokenized_path).exists():
+        print(f"Loading pre-tokenized data from: {pretokenized_path}")
+        full_dataset = AIDetectionDataset.load(pretokenized_path)
+        
+        # Split into train/eval/test
+        total_size = len(full_dataset)
+        train_size = int(total_size * config["train_split"])
+        eval_size = int(total_size * config["eval_split"])
+        test_size = total_size - train_size - eval_size
+
+        train_dataset, eval_dataset, _ = random_split(
+            full_dataset,
+            [train_size, eval_size, test_size],
+            generator=torch.Generator().manual_seed(42),
+        )
+
+        print(f"Dataset size: {total_size} samples")
+        print(f"Train: {len(train_dataset)}, Eval: {len(eval_dataset)}")
+        return train_dataset, eval_dataset
+
+    # Otherwise, load and tokenize raw data
     custom_data_path = config.get("custom_data_path")
     mode = config.get("mode", "full")
 
@@ -221,6 +244,7 @@ def train_model(
     mode: str = "full",
     gpu_name: Optional[str] = None,
     auto_gpu: bool = True,
+    pretokenized_path: Optional[str] = None,
 ):
     """
     Train the AI detection model.
@@ -231,6 +255,7 @@ def train_model(
         mode: "test" for quick testing, "full" for production training
         gpu_name: Manually specify GPU type
         auto_gpu: Auto-configure based on detected GPU
+        pretokenized_path: Path to pre-tokenized data (skips tokenization)
     """
     # Load configuration with GPU auto-config
     config = load_config(config_path, mode, auto_gpu=auto_gpu)
@@ -296,7 +321,7 @@ def train_model(
 
     # Prepare datasets
     print("\nPreparing datasets...")
-    train_dataset, eval_dataset = prepare_datasets(config, tokenizer)
+    train_dataset, eval_dataset = prepare_datasets(config, tokenizer, pretokenized_path)
 
     # Training arguments
     training_args = TrainingArguments(
@@ -398,6 +423,12 @@ def main():
         action="store_true",
         help="List supported GPU configurations and exit",
     )
+    parser.add_argument(
+        "--pretokenized",
+        type=str,
+        default=None,
+        help="Path to pre-tokenized data directory (skips tokenization step)",
+    )
 
     args = parser.parse_args()
 
@@ -433,6 +464,7 @@ def main():
         mode=args.mode,
         gpu_name=args.gpu,
         auto_gpu=not args.no_auto_gpu,
+        pretokenized_path=args.pretokenized,
     )
 
 
