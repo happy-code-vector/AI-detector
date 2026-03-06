@@ -278,3 +278,5 @@ Icon?
 *.dll
 *.dylib
 *.dynlib
+
+training/pretokenized_full/
