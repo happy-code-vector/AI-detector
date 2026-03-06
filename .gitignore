@@ -280,3 +280,4 @@ Icon?
 *.dynlib
 
 training/pretokenized_full/
+training/pretokenized_full_chunked/
