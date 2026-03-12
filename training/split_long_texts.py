@@ -1,8 +1,7 @@
 """
 Split long texts into multiple entries based on token count.
 
-If a text has >512 tokens, it becomes 2 entries.
-If >1024 tokens, it becomes 3 entries, etc.
+Uses ijson for memory-efficient streaming of large JSON files.
 
 Usage:
     python split_long_texts.py --input input.json --output output.json --max-tokens 512
@@ -14,11 +13,18 @@ from pathlib import Path
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+try:
+    import ijson
+    HAS_IJSON = True
+except ImportError:
+    HAS_IJSON = False
+    print("WARNING: ijson not installed. Install with: pip install ijson")
+    print("Falling back to standard json.load (may use more memory)")
+
 
 def split_single_text(text: str, word_labels: list, tokenizer, max_tokens: int) -> list:
     """
     Split a single text if it exceeds max_tokens.
-
     Returns list of (text, labels) tuples.
     """
     words = text.split()
@@ -33,7 +39,6 @@ def split_single_text(text: str, word_labels: list, tokenizer, max_tokens: int) 
     tokens = tokenizer.encode(text, add_special_tokens=False)
 
     if len(tokens) <= max_tokens:
-        # Text fits, keep as is
         return [(text, word_labels)]
 
     # Need to split - use word boundaries
@@ -66,51 +71,18 @@ def split_single_text(text: str, word_labels: list, tokenizer, max_tokens: int) 
     return chunks
 
 
-def extract_json_objects(content: str) -> list:
-    """Extract all JSON objects from a string."""
-    objects = []
-    i = 0
-
-    while i < len(content):
-        # Find next '{'
-        brace_idx = content.find('{', i)
-        if brace_idx == -1:
-            break
-
-        # Find matching '}'
-        depth = 0
-        in_string = False
-        escape = False
-        j = brace_idx
-
-        while j < len(content):
-            char = content[j]
-            if escape:
-                escape = False
-                j += 1
-                continue
-            if char == '\\':
-                escape = True
-                j += 1
-                continue
-            if char == '"':
-                in_string = not in_string
-            elif not in_string:
-                if char == '{':
-                    depth += 1
-                elif char == '}':
-                    depth -= 1
-                    if depth == 0:
-                        # Found complete object
-                        obj_str = content[brace_idx:j+1]
-                        objects.append(obj_str)
-                        i = j + 1
-                        break
-            j += 1
-        else:
-            break
-
-    return objects
+def count_entries(filepath: str) -> int:
+    """Count total entries in the JSON file."""
+    if HAS_IJSON:
+        count = 0
+        with open(filepath, "rb") as f:
+            for _ in ijson.items(f, "sentences.item"):
+                count += 1
+        return count
+    else:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return len(data.get("sentences", []))
 
 
 def main():
@@ -136,115 +108,101 @@ def main():
     original_count = 0
     split_count = 0
     needs_split_count = 0
+    error_count = 0
 
-    # Read file in chunks to find the sentences array
-    print(f"\nReading: {args.input}")
+    # Count entries first for progress bar
+    print(f"\nCounting entries in: {args.input}")
+    total_entries = count_entries(args.input)
+    print(f"Found {total_entries} entries")
 
-    with open(args.input, "r", encoding="utf-8") as fin:
-        # Read until we find "sentences": [
-        buffer = ""
-        found_start = False
-
-        while True:
-            chunk = fin.read(1000000)  # Read 1MB at a time
-            if not chunk:
-                break
-            buffer += chunk
-
-            if not found_start and '"sentences"' in buffer:
-                # Find the opening bracket
-                idx = buffer.find('"sentences"')
-                bracket_idx = buffer.find('[', idx)
-                if bracket_idx != -1:
-                    buffer = buffer[bracket_idx + 1:]
-                    found_start = True
-                    break
-
-        if not found_start:
-            print("ERROR: Could not find 'sentences' array!")
-            return
-
-        # Now read the rest of the file
-        print("Loading remaining content...")
-        buffer += fin.read()
-
-    print(f"Loaded {len(buffer) / 1e9:.2f} GB of content")
-
-    # Find the closing bracket of the array
-    print("Finding array boundaries...")
-    depth = 0
-    in_string = False
-    escape = False
-    end_idx = len(buffer)
-
-    for i, char in enumerate(buffer):
-        if escape:
-            escape = False
-            continue
-        if char == '\\':
-            escape = True
-            continue
-        if char == '"':
-            in_string = not in_string
-        elif not in_string:
-            if char == '[':
-                depth += 1
-            elif char == ']':
-                depth -= 1
-                if depth == 0:
-                    end_idx = i
-                    break
-
-    array_content = buffer[:end_idx]
-    print(f"Array content size: {len(array_content) / 1e9:.2f} GB")
-
-    # Extract all JSON objects
-    print("\nExtracting JSON objects...")
-    objects = extract_json_objects(array_content)
-    print(f"Found {len(objects)} objects")
-
-    # Process and write output
+    # Process with streaming
     print(f"\nProcessing (max_tokens={args.max_tokens})...")
 
     with open(args.output, "w", encoding="utf-8") as fout:
         fout.write('{"sentences": [\n')
         first_entry = True
 
-        for obj_str in tqdm(objects, desc="Splitting"):
-            try:
-                item = json.loads(obj_str)
-                if "text" in item and "labels" in item:
-                    original_count += 1
+        if HAS_IJSON:
+            # Use ijson for streaming
+            with open(args.input, "rb") as fin:
+                for item in tqdm(ijson.items(fin, "sentences.item"), total=total_entries, desc="Splitting"):
+                    try:
+                        if "text" not in item or "labels" not in item:
+                            error_count += 1
+                            continue
 
-                    chunks = split_single_text(
-                        item["text"],
-                        item["labels"],
-                        tokenizer,
-                        args.max_tokens
-                    )
+                        original_count += 1
+                        text = item["text"]
+                        labels = item["labels"]
+
+                        chunks = split_single_text(text, labels, tokenizer, args.max_tokens)
+
+                        if len(chunks) > 1:
+                            needs_split_count += 1
+
+                        for chunk_text, chunk_labels in chunks:
+                            split_count += 1
+                            if not first_entry:
+                                fout.write(',\n')
+                            first_entry = False
+                            json.dump({"text": chunk_text, "labels": chunk_labels}, fout, ensure_ascii=False)
+
+                    except Exception as e:
+                        error_count += 1
+                        continue
+        else:
+            # Fallback to json.load
+            with open(args.input, "r", encoding="utf-8") as fin:
+                data = json.load(fin)
+
+            for item in tqdm(data.get("sentences", []), desc="Splitting"):
+                try:
+                    if "text" not in item or "labels" not in item:
+                        error_count += 1
+                        continue
+
+                    original_count += 1
+                    text = item["text"]
+                    labels = item["labels"]
+
+                    chunks = split_single_text(text, labels, tokenizer, args.max_tokens)
 
                     if len(chunks) > 1:
                         needs_split_count += 1
 
-                    for text, labels in chunks:
+                    for chunk_text, chunk_labels in chunks:
                         split_count += 1
                         if not first_entry:
                             fout.write(',\n')
                         first_entry = False
-                        json.dump({"text": text, "labels": labels}, fout, ensure_ascii=False)
+                        json.dump({"text": chunk_text, "labels": chunk_labels}, fout, ensure_ascii=False)
 
-            except json.JSONDecodeError as e:
-                print(f"Warning: Skipping malformed entry")
-                continue
+                except Exception as e:
+                    error_count += 1
+                    continue
 
         fout.write('\n]}')
 
-    print(f"\n{'='*40}")
-    print(f"Original entries: {original_count}")
+    # Verify output file is valid JSON
+    print("\nVerifying output file...")
+    try:
+        with open(args.output, "r", encoding="utf-8") as f:
+            result = json.load(f)
+        output_count = len(result.get("sentences", []))
+        print(f"Output file contains {output_count} entries")
+    except json.JSONDecodeError as e:
+        print(f"WARNING: Output file may be corrupted: {e}")
+
+    # Summary
+    print(f"\n{'='*60}")
+    print("SUMMARY")
+    print(f"{'='*60}")
+    print(f"Original entries processed: {original_count}")
     print(f"Entries needing split: {needs_split_count}")
     print(f"Total after splitting: {split_count}")
     print(f"New entries added: {split_count - original_count}")
-    print(f"{'='*40}")
+    print(f"Errors/skipped: {error_count}")
+    print(f"{'='*60}")
     print(f"\nSaved to: {args.output}")
     print("Done!")
 
