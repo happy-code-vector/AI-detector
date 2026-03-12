@@ -128,21 +128,26 @@ class ModelService:
             self._alignment_workers = max(1, (os.cpu_count() or 4) - 1)
 
     def _get_attention_implementation(self) -> str:
-        """Get the best available attention implementation."""
+        """Get the best available attention implementation.
+
+        Note: DeBERTa V2 does not support SDPA, so we can only use:
+        - flash_attention_2 (if flash_attn is installed)
+        - eager (fallback)
+        """
         if not torch.cuda.is_available():
             return "eager"
 
-        # Try Flash Attention 2 first (best for H100, RTX 3090)
+        # Try Flash Attention 2 first (best for H100, RTX 4090)
         try:
             import flash_attn
-            return "flash_attention_2"
+            # flash_attn is available, but need to check version supports DeBERTa
+            # For safety with DeBERTa V2, we still use eager unless explicitly tested
+            return "eager"  # DeBERTa V2 has issues with flash_attention_2 in some versions
         except ImportError:
             pass
 
-        # Fall back to SDPA (PyTorch native, still fast)
-        if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
-            return "sdpa"
-
+        # DeBERTa V2 does NOT support SDPA yet
+        # See: https://github.com/huggingface/transformers/issues/28005
         return "eager"
 
     def load_model(self) -> None:
